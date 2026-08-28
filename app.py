@@ -181,19 +181,19 @@ pie_empresa = get_config("mensaje_pie", "Presupuesto válido por 15 días.")
 moneda = get_config("simbolo_moneda", "$")
 tipos_actuales = get_tipos_trabajo()
 
-# ---------------- ESTILOS CSS RESPONSIVE (PC + IPHONE / MOBILE) ----------------
+# ---------------- ESTILOS CSS CON PROTECCIÓN TOTAL SAFARI / IPHONE ----------------
 st.markdown(f"""
 <style>
-    /* Ocultar barra superior y decoraciones por defecto */
+    /* Ocultar elementos nativos de Streamlit */
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {{
         display: none !important;
     }}
     
-    /* Fondo general Dark */
+    /* Fondo Dark */
     .stApp {{
-        background-color: #050508;
-        color: #f8fafc;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+        background-color: #050508 !important;
+        color: #f8fafc !important;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif !important;
     }}
 
     .block-container {{
@@ -202,88 +202,68 @@ st.markdown(f"""
         max-width: 1350px;
     }}
 
-    /* Botones de navegación tipo píldora */
-    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"] {{
+    /* FORZAR ESTILOS DE BOTONES PARA EVITAR BLANCO EN SAFARI */
+    button, [data-testid="baseButton-secondary"] {{
         background-color: #12141c !important;
-        color: #cbd5e1 !important;
-        border: 1px solid #1e293b !important;
-        border-radius: 9999px !important;
-        padding: 6px 12px !important;
-        font-size: 13px !important;
-        font-weight: 500 !important;
-        white-space: nowrap !important;
-        transition: all 0.2s ease !important;
-    }}
-    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"]:hover {{
-        background-color: #1e2230 !important;
+        background-image: none !important;
         color: #ffffff !important;
-        border-color: #3b82f6 !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: 1px solid #2d3748 !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
     }}
     
-    /* Botón de acción principal destacado */
-    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-primary"] {{
+    /* Botón primario */
+    [data-testid="baseButton-primary"] {{
         background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%) !important;
         color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
         border: none !important;
-        border-radius: 9999px !important;
-        padding: 6px 16px !important;
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        white-space: nowrap !important;
-        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35) !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
     }}
 
-    /* Hero Banner Moderno */
+    /* Hero Banner */
     .hero-container {{
         text-align: center;
-        padding: 25px 15px 20px 15px;
-        margin-bottom: 20px;
+        padding: 15px 10px 15px 10px;
+        margin-bottom: 15px;
     }}
     .hero-title {{
-        font-size: 46px;
+        font-size: 38px;
         font-weight: 800;
-        letter-spacing: -1.2px;
+        letter-spacing: -1px;
         line-height: 1.15;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         background: linear-gradient(90deg, #fef08a 0%, #60a5fa 50%, #818cf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }}
     .hero-subtitle {{
-        font-size: 16px;
+        font-size: 14.5px;
         color: #94a3b8;
-        max-width: 650px;
+        max-width: 600px;
         margin: 0 auto;
         line-height: 1.4;
     }}
 
-    /* REGLAS RESPONSIVE PARA IPHONE / CELULARES (Pantallas <= 768px) */
+    /* Selectores en modo oscuro */
+    div[data-baseweb="select"] > div {{
+        background-color: #12141c !important;
+        border-color: #2d3748 !important;
+        color: #ffffff !important;
+    }}
+    
+    /* Media queries para móvil */
     @media (max-width: 768px) {{
-        .block-container {{
-            padding-left: 0.8rem !important;
-            padding-right: 0.8rem !important;
-            padding-top: 0.8rem !important;
-        }}
         .hero-title {{
-            font-size: 28px !important;
-            letter-spacing: -0.5px !important;
+            font-size: 24px !important;
         }}
         .hero-subtitle {{
-            font-size: 13.5px !important;
+            font-size: 13px !important;
         }}
         .hero-container {{
-            padding: 12px 5px 15px 5px !important;
-            margin-bottom: 12px !important;
-        }}
-        /* Botones táctiles cómodos en móvil */
-        div[data-testid="stHorizontalBlock"] button {{
-            padding: 8px 10px !important;
-            font-size: 12px !important;
-        }}
-        /* Evitar desbordes en tablas */
-        div[data-testid="stDataFrame"] {{
-            width: 100% !important;
-            overflow-x: auto !important;
+            padding: 8px 0 !important;
         }}
     }}
 </style>
@@ -381,38 +361,32 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- ESTADO DE NAVEGACIÓN ----------------
+# ---------------- NAVEGACIÓN COMPACTA Y RESPONSIVE ----------------
+SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Entregados", "Compras", "Balance", "Ajustes"]
+
 if 'seccion_activa' not in st.session_state:
     st.session_state.seccion_activa = "Trabajos"
 
-# ==========================================
-# HEADER / NAVBAR ESTILO SAAS RESPONSIVE
-# ==========================================
-col_brand, col_nav, col_cta = st.columns([1.5, 6.2, 1.0])
-
-with col_brand:
-    st.markdown(f"<div style='font-size: 18px; font-weight: 800; color: #ffffff; padding-top: 6px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
-
-with col_nav:
-    n1, n2, n3, n4, n5, n6, n7 = st.columns([1, 1.35, 1, 1.25, 1, 1, 1])
-    if n1.button("Trabajos", use_container_width=True): st.session_state.seccion_activa = "Trabajos"; st.rerun()
-    if n2.button("Presupuestos", use_container_width=True): st.session_state.seccion_activa = "Presupuestos"; st.rerun()
-    if n3.button("Boletas", use_container_width=True): st.session_state.seccion_activa = "Boletas"; st.rerun()
-    if n4.button("Entregados", use_container_width=True): st.session_state.seccion_activa = "Entregados"; st.rerun()
-    if n5.button("Compras", use_container_width=True): st.session_state.seccion_activa = "Compras"; st.rerun()
-    if n6.button("Balance", use_container_width=True): st.session_state.seccion_activa = "Balance"; st.rerun()
-    if n7.button("Ajustes", use_container_width=True): st.session_state.seccion_activa = "Configuracion"; st.rerun()
-
-with col_cta:
-    if st.button("✨ + Nuevo", type="primary", use_container_width=True):
+col_head1, col_head2 = st.columns([1, 1])
+with col_head1:
+    st.markdown(f"<div style='font-size: 20px; font-weight: 800; color: #ffffff; padding-top: 4px;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
+with col_head2:
+    if st.button("✨ + Cargar Pedido", type="primary", use_container_width=True):
         st.session_state.seccion_activa = "Trabajos"
         st.session_state.abrir_nuevo = True
         st.rerun()
 
-st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 18px 0;'>", unsafe_allow_html=True)
+idx_actual = SECCIONES.index(st.session_state.seccion_activa) if st.session_state.seccion_activa in SECCIONES else 0
+seleccion = st.selectbox("📌 Módulo / Sección:", SECCIONES, index=idx_actual, label_visibility="collapsed")
+
+if seleccion != st.session_state.seccion_activa:
+    st.session_state.seccion_activa = "Configuracion" if seleccion == "Ajustes" else seleccion
+    st.rerun()
+
+st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 12px 0;'>", unsafe_allow_html=True)
 
 # ==========================================
-# HERO SECTION ESTILO PROVISUAL
+# HERO BANNER
 # ==========================================
 st.markdown(f"""
 <div class="hero-container">
@@ -431,35 +405,33 @@ if st.session_state.seccion_activa == "Trabajos":
         ORDER BY fecha_entrega ASC, id DESC
     """)
     
-    col_acc1, col_acc2, col_acc3 = st.columns([1.2, 1.2, 1])
-    
-    with col_acc1:
-        with st.expander("➕ Cargar Nuevo Trabajo", expanded=st.session_state.get('abrir_nuevo', False)):
-            with st.form("form_nuevo_trabajo", clear_on_submit=True):
-                nuevo_cli = st.text_input("Nombre del Cliente *")
-                nuevo_trabajo = st.text_input("Trabajo / Descripción del pedido *")
-                nuevo_est = st.selectbox("Estado Inicial", ESTADOS_TRABAJO, key="n_est")
-                nuevo_fcarga = st.date_input("Fecha de Carga", value=date.today(), key="n_fc")
-                nuevo_fentrega = st.date_input("Fecha de Entrega Estimada", value=date.today(), key="n_fe")
-                nuevo_costo = st.number_input(f"Costo de Producción ({moneda})", min_value=0.0, step=100.0, key="n_costo")
-                nuevo_precio = st.number_input(f"Precio de Venta ({moneda}) *", min_value=0.0, step=100.0, key="n_precio")
-                
-                guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
-                if guardar_nuevo:
-                    if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
-                        if IS_POSTGRES:
-                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
-                                      {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio}, fetch=False)
-                        else:
-                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                      (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio), fetch=False)
-                        st.session_state.abrir_nuevo = False
-                        st.success("¡Trabajo guardado con éxito!")
-                        st.rerun()
+    with st.expander("➕ Cargar Nuevo Trabajo", expanded=st.session_state.get('abrir_nuevo', False)):
+        with st.form("form_nuevo_trabajo", clear_on_submit=True):
+            nuevo_cli = st.text_input("Nombre del Cliente *")
+            nuevo_trabajo = st.text_input("Trabajo / Descripción del pedido *")
+            nuevo_est = st.selectbox("Estado Inicial", ESTADOS_TRABAJO, key="n_est")
+            nuevo_fcarga = st.date_input("Fecha de Carga", value=date.today(), key="n_fc")
+            nuevo_fentrega = st.date_input("Fecha de Entrega Estimada", value=date.today(), key="n_fe")
+            nuevo_costo = st.number_input(f"Costo de Producción ({moneda})", min_value=0.0, step=100.0, key="n_costo")
+            nuevo_precio = st.number_input(f"Precio de Venta ({moneda}) *", min_value=0.0, step=100.0, key="n_precio")
+            
+            guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
+            if guardar_nuevo:
+                if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
+                    if IS_POSTGRES:
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
+                                  {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio}, fetch=False)
                     else:
-                        st.error("Completá cliente, trabajo y precio de venta.")
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                  (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio), fetch=False)
+                    st.session_state.abrir_nuevo = False
+                    st.success("¡Trabajo guardado con éxito!")
+                    st.rerun()
+                else:
+                    st.error("Completá cliente, trabajo y precio de venta.")
 
-    with col_acc2:
+    col_t_act1, col_t_act2 = st.columns(2)
+    with col_t_act1:
         with st.expander("✏️ Modificar Trabajo", expanded=False):
             if not df_todos_trabajos.empty:
                 opciones_activos = {
@@ -502,7 +474,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.success("¡Trabajo actualizado!")
                             st.rerun()
 
-    with col_acc3:
+    with col_t_act2:
         with st.expander("🗑️ Borrar Trabajo", expanded=False):
             if not df_todos_trabajos.empty:
                 opciones_borrar = {
@@ -522,12 +494,12 @@ if st.session_state.seccion_activa == "Trabajos":
                     st.rerun()
 
     st.markdown("""
-    <div style='background: #0b0f19; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 14px; margin: 15px 0;'>
-        <span style='color:#94a3b8; font-size:13px; font-weight:600;'>ESTADOS: </span>
-        <span style='background-color:#ffcccc; color:#900C3F; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:bold;'>🔴 Pendiente</span> 
-        <span style='background-color:#fff3cd; color:#856404; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:bold; margin-left:4px;'>🟡 En Producción</span> 
-        <span style='background-color:#d4edda; color:#155724; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:bold; margin-left:4px;'>🟢 Listo para Entrega</span> 
-        <span style='background-color:#cce5ff; color:#004085; padding:2px 7px; border-radius:4px; font-size:12px; font-weight:bold; margin-left:4px;'>🔵 Entregado y Cobrado</span>
+    <div style='background: #0b0f19; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 12px; margin: 12px 0; font-size: 12px;'>
+        <span style='color:#94a3b8; font-weight:600;'>ESTADOS: </span>
+        <span style='background-color:#ffcccc; color:#900C3F; padding:2px 6px; border-radius:4px; font-weight:bold;'>🔴 Pendiente</span> 
+        <span style='background-color:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟡 Producción</span> 
+        <span style='background-color:#d4edda; color:#155724; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟢 Listo</span> 
+        <span style='background-color:#cce5ff; color:#004085; padding:2px 6px; border-radius:4px; font-weight:bold;'>🔵 Entregado</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -539,7 +511,7 @@ if st.session_state.seccion_activa == "Trabajos":
             opciones_filtro = ["Todos"] + ESTADOS_TRABAJO
             estado_seleccionado = st.selectbox("Filtrar por Estado:", options=opciones_filtro, index=0)
         with col_filtro2:
-            busq_trabajo = st.text_input("🔍 Buscar por Cliente o Trabajo:", key="busq_gral")
+            busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente o trabajo...")
 
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
@@ -555,12 +527,12 @@ if st.session_state.seccion_activa == "Trabajos":
         df_mostrar = df_trabajos_tabla.rename(columns={
             'cliente': 'Cliente',
             'tipo_trabajo': 'Trabajo',
-            'fecha_carga': 'Fecha de Carga',
-            'fecha_entrega': 'Fecha de Entrega',
+            'fecha_carga': 'Fecha Carga',
+            'fecha_entrega': 'Fecha Entrega',
             'estado': 'Estado',
-            'costo_material': f'Costo de Producción ({moneda})',
-            'precio_venta': f'Precio de Venta ({moneda})'
-        })[['Cliente', 'Trabajo', 'Fecha de Carga', 'Fecha de Entrega', 'Estado', f'Costo de Producción ({moneda})', f'Precio de Venta ({moneda})']]
+            'costo_material': f'Costo ({moneda})',
+            'precio_venta': f'Venta ({moneda})'
+        })[['Cliente', 'Trabajo', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
         
         st.dataframe(df_mostrar, use_container_width=True)
     else:
@@ -572,42 +544,31 @@ if st.session_state.seccion_activa == "Trabajos":
 elif st.session_state.seccion_activa == "Presupuestos":
     st.subheader("📄 Emisión de Presupuestos")
     
-    col_pr1, col_pr2 = st.columns([1.1, 1])
-    
-    with col_pr1:
-        with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
-            with st.form("form_nuevo_presupuesto_detallado", clear_on_submit=True):
-                col_c1, col_c2 = st.columns(2)
-                with col_c1:
-                    pr_cliente = st.text_input("Cliente *")
-                    pr_fecha = st.date_input("Fecha", value=date.today())
-                with col_c2:
-                    pr_telefono = st.text_input("Teléfono / WhatsApp")
-                    pr_tipo = st.selectbox("Tipo de Trabajo / Rubro", tipos_actuales, key="pr_tipo_sel")
-                
-                pr_detalle = st.text_area("Detalle / Especificaciones del trabajo *")
-                
-                col_u1, col_u2, col_u3 = st.columns(3)
-                with col_u1:
-                    pr_cant = st.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
-                with col_u2:
-                    pr_unitario = st.number_input(f"Precio Unitario ({moneda}) *", min_value=0.0, step=100.0)
-                with col_u3:
-                    pr_costo_mat = st.number_input(f"Costo Estimado Material ({moneda})", min_value=0.0, step=100.0)
-                
-                btn_crear_pres = st.form_submit_button("💾 Guardar Presupuesto", use_container_width=True)
-                
-                if btn_crear_pres:
-                    total_calculado = pr_cant * pr_unitario
-                    if pr_cliente.strip() and pr_unitario > 0:
-                        if IS_POSTGRES:
-                            run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
-                                      {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": pr_detalle.strip(), "cant": pr_cant, "pu": pr_unitario, "pt": total_calculado, "cm": pr_costo_mat, "e": "Pendiente"}, fetch=False)
-                        else:
-                            run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                      (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"), fetch=False)
-                        st.success("¡Presupuesto guardado!")
-                        st.rerun()
+    with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
+        with st.form("form_nuevo_presupuesto_detallado", clear_on_submit=True):
+            pr_cliente = st.text_input("Cliente *")
+            pr_fecha = st.date_input("Fecha", value=date.today())
+            pr_telefono = st.text_input("Teléfono / WhatsApp")
+            pr_tipo = st.selectbox("Tipo de Trabajo / Rubro", tipos_actuales, key="pr_tipo_sel")
+            pr_detalle = st.text_area("Detalle / Especificaciones del trabajo *")
+            
+            pr_cant = st.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
+            pr_unitario = st.number_input(f"Precio Unitario ({moneda}) *", min_value=0.0, step=100.0)
+            pr_costo_mat = st.number_input(f"Costo Estimado Material ({moneda})", min_value=0.0, step=100.0)
+            
+            btn_crear_pres = st.form_submit_button("💾 Guardar Presupuesto", use_container_width=True)
+            
+            if btn_crear_pres:
+                total_calculado = pr_cant * pr_unitario
+                if pr_cliente.strip() and pr_unitario > 0:
+                    if IS_POSTGRES:
+                        run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
+                                  {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": pr_detalle.strip(), "cant": pr_cant, "pu": pr_unitario, "pt": total_calculado, "cm": pr_costo_mat, "e": "Pendiente"}, fetch=False)
+                    else:
+                        run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                  (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"), fetch=False)
+                    st.success("¡Presupuesto guardado!")
+                    st.rerun()
 
     df_presupuestos = run_query("SELECT * FROM presupuestos ORDER BY id DESC")
     
@@ -617,34 +578,33 @@ elif st.session_state.seccion_activa == "Presupuestos":
             for _, row in df_presupuestos.iterrows()
         }
         
-        with col_pr2:
-            with st.expander("⚡ Gestionar Presupuesto Seleccionado", expanded=True):
-                pres_sel = st.selectbox("Seleccionar Presupuesto:", list(opciones_pres.keys()), key="pres_sel_box")
-                pres_id = opciones_pres[pres_sel]
-                pres_data = df_presupuestos[df_presupuestos['id'] == pres_id].iloc[0]
-                
-                col_b_p1, col_b_p2 = st.columns(2)
-                with col_b_p1:
-                    if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
-                        if IS_POSTGRES:
-                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
-                                      {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)}, fetch=False)
-                            run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id}, fetch=False)
-                        else:
-                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                      (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)), fetch=False)
-                            run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,), fetch=False)
-                        st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller!")
-                        st.rerun()
-                
-                with col_b_p2:
-                    if st.button("🗑️ Borrar Presupuesto", use_container_width=True, key=f"btn_del_pres_{pres_id}"):
-                        if IS_POSTGRES:
-                            run_query("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id}, fetch=False)
-                        else:
-                            run_query("DELETE FROM presupuestos WHERE id = ?", (pres_id,), fetch=False)
-                        st.warning(f"Presupuesto #{pres_id} eliminado.")
-                        st.rerun()
+        with st.expander("⚡ Gestionar Presupuesto Seleccionado", expanded=True):
+            pres_sel = st.selectbox("Seleccionar Presupuesto:", list(opciones_pres.keys()), key="pres_sel_box")
+            pres_id = opciones_pres[pres_sel]
+            pres_data = df_presupuestos[df_presupuestos['id'] == pres_id].iloc[0]
+            
+            col_b_p1, col_b_p2 = st.columns(2)
+            with col_b_p1:
+                if st.button("🚀 Pasar a Trabajo Activo", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
+                    if IS_POSTGRES:
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
+                                  {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)}, fetch=False)
+                        run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id}, fetch=False)
+                    else:
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                  (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)), fetch=False)
+                        run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,), fetch=False)
+                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo!")
+                    st.rerun()
+            
+            with col_b_p2:
+                if st.button("🗑️ Borrar Presupuesto", use_container_width=True, key=f"btn_del_pres_{pres_id}"):
+                    if IS_POSTGRES:
+                        run_query("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id}, fetch=False)
+                    else:
+                        run_query("DELETE FROM presupuestos WHERE id = ?", (pres_id,), fetch=False)
+                    st.warning(f"Presupuesto #{pres_id} eliminado.")
+                    st.rerun()
 
         st.divider()
         
@@ -663,56 +623,56 @@ elif st.session_state.seccion_activa == "Presupuestos":
         info_empresa_html = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
         
         presupuesto_html = f"""
-        <div style="border: 2px solid #333; border-radius: 8px; padding: 20px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 15px;">
+        <div style="border: 2px solid #333; border-radius: 8px; padding: 16px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; margin-bottom: 12px;">
                 <div>
-                    <h2 style="margin: 0; color: #1e3a8a; font-size: 20px;">{titulo_actual}</h2>
+                    <h2 style="margin: 0; color: #1e3a8a; font-size: 19px;">{titulo_actual}</h2>
                     {info_empresa_html}
-                    <h3 style="margin: 3px 0; color: #555; font-size: 14px; font-weight: normal;">PRESUPUESTO ESTIMADO</h3>
+                    <h3 style="margin: 3px 0; color: #555; font-size: 13px; font-weight: normal;">PRESUPUESTO ESTIMADO</h3>
                 </div>
                 <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #333; font-size: 16px;">N° #{int(pres_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 13px; color: #666;">Fecha: {pres_data['fecha']}</p>
+                    <h3 style="margin: 0; color: #333; font-size: 15px;">N° #{int(pres_id):04d}</h3>
+                    <p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {pres_data['fecha']}</p>
                 </div>
             </div>
             
-            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; margin-bottom: 15px; font-size: 13.5px;">
-                <p style="margin: 3px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
-                <p style="margin: 3px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
-                <p style="margin: 3px 0;"><strong>Rubro / Tipo:</strong> {pres_data['tipo_trabajo']}</p>
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px;">
+                <p style="margin: 2px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
+                <p style="margin: 2px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
+                <p style="margin: 2px 0;"><strong>Rubro / Tipo:</strong> {pres_data['tipo_trabajo']}</p>
             </div>
 
             <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13.5px;">
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px;">
                     <thead>
                         <tr style="background-color: #1e3a8a; color: #ffffff;">
-                            <th style="padding: 8px; text-align: left;">Detalle del Trabajo</th>
-                            <th style="padding: 8px; text-align: center; width: 60px;">Cant.</th>
-                            <th style="padding: 8px; text-align: right; width: 110px;">P. Unit.</th>
-                            <th style="padding: 8px; text-align: right; width: 110px;">Total</th>
+                            <th style="padding: 7px; text-align: left;">Detalle del Trabajo</th>
+                            <th style="padding: 7px; text-align: center; width: 55px;">Cant.</th>
+                            <th style="padding: 7px; text-align: right; width: 100px;">P. Unit.</th>
+                            <th style="padding: 7px; text-align: right; width: 100px;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr style="border-bottom: 1px solid #ddd;">
-                            <td style="padding: 10px 8px;">{pr_det}</td>
-                            <td style="padding: 10px 8px; text-align: center;">{pr_cant_val:,.0f}</td>
-                            <td style="padding: 10px 8px; text-align: right;">{moneda}{pr_unit_val:,.2f}</td>
-                            <td style="padding: 10px 8px; text-align: right; font-weight: bold;">{moneda}{pr_tot_val:,.2f}</td>
+                            <td style="padding: 9px 7px;">{pr_det}</td>
+                            <td style="padding: 9px 7px; text-align: center;">{pr_cant_val:,.0f}</td>
+                            <td style="padding: 9px 7px; text-align: right;">{moneda}{pr_unit_val:,.2f}</td>
+                            <td style="padding: 9px 7px; text-align: right; font-weight: bold;">{moneda}{pr_tot_val:,.2f}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
-                <div style="width: 250px; background-color: #f1f5f9; padding: 10px; border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 16px; color: #1e3a8a;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
+                <div style="width: 240px; background-color: #f1f5f9; padding: 8px 12px; border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 15px; color: #1e3a8a;">
                         <strong>TOTAL:</strong>
                         <strong>{moneda}{pr_tot_val:,.2f}</strong>
                     </div>
                 </div>
             </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11.5px;">
+            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11px;">
                 <p style="margin: 2px;">{pie_empresa}</p>
                 <p style="margin: 2px;">¡Gracias por consultarnos!</p>
             </div>
@@ -724,7 +684,7 @@ elif st.session_state.seccion_activa == "Presupuestos":
         col_btn_p_down, col_btn_p_imp = st.columns(2)
         with col_btn_p_down:
             st.download_button(
-                label="📥 Descargar Presupuesto en PDF",
+                label="📥 Descargar PDF",
                 data=pdf_pres_bytes,
                 file_name=f"Presupuesto_{int(pres_id)}_{pres_data['cliente']}.pdf",
                 mime="application/pdf",
@@ -748,8 +708,8 @@ elif st.session_state.seccion_activa == "Presupuestos":
                 }}, 400);
             }}
             </script>
-            <button onclick="imprimirPresupuesto()" style="width: 100%; background-color: #1e3a8a; color: white; border: none; padding: 9px 18px; font-size: 15px; font-weight: bold; border-radius: 8px; cursor: pointer;">
-                🖨️ Imprimir Presupuesto Directo
+            <button onclick="imprimirPresupuesto()" style="width: 100%; background-color: #1e3a8a; color: white; border: none; padding: 8px 14px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+                🖨️ Imprimir
             </button>
             """
             st.components.v1.html(html_impresion_pres, height=50)
@@ -758,41 +718,31 @@ elif st.session_state.seccion_activa == "Presupuestos":
 # VISTA 3: BOLETAS
 # ==========================================
 elif st.session_state.seccion_activa == "Boletas":
-    st.subheader("🧾 Emisión de Boletas / Comprobantes de Pago")
+    st.subheader("🧾 Emisión de Boletas / Comprobantes")
     
-    col_b1, col_b2 = st.columns([1.1, 1])
-    
-    with col_b1:
-        with st.expander("➕ Generar Nueva Boleta", expanded=False):
-            with st.form("form_nueva_boleta", clear_on_submit=True):
-                col_bc1, col_bc2 = st.columns(2)
-                with col_bc1:
-                    b_cliente = st.text_input("Cliente *")
-                    b_fecha = st.date_input("Fecha", value=date.today(), key="b_fecha_key")
-                with col_bc2:
-                    b_telefono = st.text_input("Teléfono / WhatsApp", key="b_tel_key")
-                
-                b_detalle = st.text_area("Detalle del trabajo / Entrega *")
-                
-                col_bm1, col_bm2 = st.columns(2)
-                with col_bm1:
-                    b_total = st.number_input(f"Total del Trabajo ({moneda}) *", min_value=0.0, step=100.0, key="b_tot_key")
-                with col_bm2:
-                    b_sena = st.number_input(f"Monto Abonado / Seña ({moneda}) *", min_value=0.0, step=100.0, key="b_sena_key")
-                
-                btn_crear_bol = st.form_submit_button("💾 Emitir Boleta", use_container_width=True)
-                
-                if btn_crear_bol:
-                    if b_cliente.strip() and b_total > 0:
-                        saldo_calc = b_total - b_sena
-                        if IS_POSTGRES:
-                            run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (:f, :c, :t, :d, :tot, :s, :sal)",
-                                      {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "tot": b_total, "s": b_sena, "sal": saldo_calc}, fetch=False)
-                        else:
-                            run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                      (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_total, b_sena, saldo_calc), fetch=False)
-                        st.success("¡Boleta generada con éxito!")
-                        st.rerun()
+    with st.expander("➕ Generar Nueva Boleta", expanded=False):
+        with st.form("form_nueva_boleta", clear_on_submit=True):
+            b_cliente = st.text_input("Cliente *")
+            b_fecha = st.date_input("Fecha", value=date.today(), key="b_fecha_key")
+            b_telefono = st.text_input("Teléfono / WhatsApp", key="b_tel_key")
+            b_detalle = st.text_area("Detalle del trabajo / Entrega *")
+            
+            b_total = st.number_input(f"Total del Trabajo ({moneda}) *", min_value=0.0, step=100.0, key="b_tot_key")
+            b_sena = st.number_input(f"Monto Abonado / Seña ({moneda}) *", min_value=0.0, step=100.0, key="b_sena_key")
+            
+            btn_crear_bol = st.form_submit_button("💾 Emitir Boleta", use_container_width=True)
+            
+            if btn_crear_bol:
+                if b_cliente.strip() and b_total > 0:
+                    saldo_calc = b_total - b_sena
+                    if IS_POSTGRES:
+                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (:f, :c, :t, :d, :tot, :s, :sal)",
+                                  {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "tot": b_total, "s": b_sena, "sal": saldo_calc}, fetch=False)
+                    else:
+                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                  (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_total, b_sena, saldo_calc), fetch=False)
+                    st.success("¡Boleta generada con éxito!")
+                    st.rerun()
 
     df_boletas = run_query("SELECT * FROM boletas ORDER BY id DESC")
     
@@ -802,19 +752,18 @@ elif st.session_state.seccion_activa == "Boletas":
             for _, row in df_boletas.iterrows()
         }
         
-        with col_b2:
-            with st.expander("⚡ Gestionar Boleta Seleccionada", expanded=True):
-                bol_sel = st.selectbox("Seleccionar Boleta:", list(opciones_bol.keys()), key="bol_sel_box")
-                bol_id = opciones_bol[bol_sel]
-                bol_data = df_boletas[df_boletas['id'] == bol_id].iloc[0]
-                
-                if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
-                    if IS_POSTGRES:
-                        run_query("DELETE FROM boletas WHERE id = :id", {"id": bol_id}, fetch=False)
-                    else:
-                        run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
-                    st.warning(f"Boleta #{bol_id} eliminada.")
-                    st.rerun()
+        with st.expander("⚡ Gestionar Boleta Seleccionada", expanded=True):
+            bol_sel = st.selectbox("Seleccionar Boleta:", list(opciones_bol.keys()), key="bol_sel_box")
+            bol_id = opciones_bol[bol_sel]
+            bol_data = df_boletas[df_boletas['id'] == bol_id].iloc[0]
+            
+            if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
+                if IS_POSTGRES:
+                    run_query("DELETE FROM boletas WHERE id = :id", {"id": bol_id}, fetch=False)
+                else:
+                    run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
+                st.warning(f"Boleta #{bol_id} eliminada.")
+                st.rerun()
 
         st.divider()
         
@@ -832,60 +781,60 @@ elif st.session_state.seccion_activa == "Boletas":
         info_empresa_html_b = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
         
         boleta_html_doc = f"""
-        <div style="border: 2px solid #15803d; border-radius: 8px; padding: 20px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 10px; margin-bottom: 15px;">
+        <div style="border: 2px solid #15803d; border-radius: 8px; padding: 16px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 8px; margin-bottom: 12px;">
                 <div>
-                    <h2 style="margin: 0; color: #15803d; font-size: 20px;">{titulo_actual}</h2>
+                    <h2 style="margin: 0; color: #15803d; font-size: 19px;">{titulo_actual}</h2>
                     {info_empresa_html_b}
-                    <h3 style="margin: 3px 0; color: #333; font-size: 14px;">BOLETA / COMPROBANTE DE PAGO</h3>
+                    <h3 style="margin: 3px 0; color: #333; font-size: 13px;">BOLETA / COMPROBANTE DE PAGO</h3>
                 </div>
                 <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #15803d; font-size: 16px;">BOLETA N° #{int(bol_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 13px; color: #666;">Fecha: {bol_data['fecha']}</p>
+                    <h3 style="margin: 0; color: #15803d; font-size: 15px;">BOLETA N° #{int(bol_id):04d}</h3>
+                    <p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {bol_data['fecha']}</p>
                 </div>
             </div>
             
-            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px; margin-bottom: 15px; font-size: 13.5px;">
-                <p style="margin: 3px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
-                <p style="margin: 3px 0;"><strong>Teléfono:</strong> {b_tel}</p>
+            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px;">
+                <p style="margin: 2px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
+                <p style="margin: 2px 0;"><strong>Teléfono:</strong> {b_tel}</p>
             </div>
 
             <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13.5px;">
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px;">
                     <thead>
                         <tr style="background-color: #15803d; color: #ffffff;">
-                            <th style="padding: 8px; text-align: left;">Detalle del Trabajo</th>
-                            <th style="padding: 8px; text-align: right; width: 130px;">Importe</th>
+                            <th style="padding: 7px; text-align: left;">Detalle del Trabajo</th>
+                            <th style="padding: 7px; text-align: right; width: 120px;">Importe</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr style="border-bottom: 1px solid #ddd;">
-                            <td style="padding: 10px 8px;">{b_det}</td>
-                            <td style="padding: 10px 8px; text-align: right; font-weight: bold;">{moneda}{b_tot_val:,.2f}</td>
+                            <td style="padding: 9px 7px;">{b_det}</td>
+                            <td style="padding: 9px 7px; text-align: right; font-weight: bold;">{moneda}{b_tot_val:,.2f}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
-                <div style="width: 270px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-size: 13.5px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span>Total del Trabajo:</span>
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
+                <div style="width: 250px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                        <span>Total:</span>
                         <strong>{moneda}{b_tot_val:,.2f}</strong>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #15803d;">
-                        <span>Monto Abonado / Seña:</span>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: #15803d;">
+                        <span>Abonado / Seña:</span>
                         <strong>{moneda}{b_sena_val:,.2f}</strong>
                     </div>
-                    <hr style="margin: 6px 0; border: none; border-top: 1px solid #94a3b8;">
-                    <div style="display: flex; justify-content: space-between; font-size: 15px; color: #b91c1c;">
+                    <hr style="margin: 5px 0; border: none; border-top: 1px solid #94a3b8;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; color: #b91c1c;">
                         <strong>Saldo Pendiente:</strong>
                         <strong>{moneda}{b_saldo_val:,.2f}</strong>
                     </div>
                 </div>
             </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11.5px;">
+            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11px;">
                 <p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>
                 <p style="margin: 2px;">¡Muchas gracias por su compra!</p>
             </div>
@@ -897,7 +846,7 @@ elif st.session_state.seccion_activa == "Boletas":
         col_btn_b_down, col_btn_b_imp = st.columns(2)
         with col_btn_b_down:
             st.download_button(
-                label="📥 Descargar Boleta en PDF",
+                label="📥 Descargar PDF",
                 data=pdf_bol_bytes,
                 file_name=f"Boleta_{int(bol_id)}_{bol_data['cliente']}.pdf",
                 mime="application/pdf",
@@ -921,8 +870,8 @@ elif st.session_state.seccion_activa == "Boletas":
                 }}, 400);
             }}
             </script>
-            <button onclick="imprimirBoletaDirecta()" style="width: 100%; background-color: #15803d; color: white; border: none; padding: 9px 18px; font-size: 15px; font-weight: bold; border-radius: 8px; cursor: pointer;">
-                🖨️ Imprimir Boleta Directa
+            <button onclick="imprimirBoletaDirecta()" style="width: 100%; background-color: #15803d; color: white; border: none; padding: 8px 14px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+                🖨️ Imprimir
             </button>
             """
             st.components.v1.html(html_impresion_bol, height=50)
@@ -931,12 +880,12 @@ elif st.session_state.seccion_activa == "Boletas":
 # VISTA 4: HISTORIAL ENTREGADOS
 # ==========================================
 elif st.session_state.seccion_activa == "Entregados":
-    st.subheader("✅ Historial de Trabajos Finalizados y Entregados")
+    st.subheader("✅ Trabajos Entregados")
     
     df_entregados = run_query(f"""
-        SELECT cliente AS 'Cliente', tipo_trabajo AS 'Trabajo', fecha_carga AS 'Fecha de Carga', fecha_entrega AS 'Fecha de Entrega',
-               costo_material AS 'Costo de Producción ({moneda})', precio_venta AS 'Precio de Venta ({moneda})',
-               (precio_venta - costo_material) AS 'Ganancia Estimada ({moneda})'
+        SELECT cliente AS 'Cliente', tipo_trabajo AS 'Trabajo', fecha_carga AS 'Fecha Carga', fecha_entrega AS 'Fecha Entrega',
+               costo_material AS 'Costo ({moneda})', precio_venta AS 'Venta ({moneda})',
+               (precio_venta - costo_material) AS 'Ganancia ({moneda})'
         FROM trabajos 
         WHERE estado = 'Entregado y Cobrado'
         ORDER BY fecha_entrega DESC, id DESC
@@ -944,17 +893,17 @@ elif st.session_state.seccion_activa == "Entregados":
     
     if not df_entregados.empty:
         col_met1, col_met2, col_met3 = st.columns(3)
-        total_cobrado = df_entregados[f'Precio de Venta ({moneda})'].sum()
-        total_costos_ent = df_entregados[f'Costo de Producción ({moneda})'].sum()
-        ganancia_ent = df_entregados[f'Ganancia Estimada ({moneda})'].sum()
+        total_cobrado = df_entregados[f'Venta ({moneda})'].sum()
+        total_costos_ent = df_entregados[f'Costo ({moneda})'].sum()
+        ganancia_ent = df_entregados[f'Ganancia ({moneda})'].sum()
         
         col_met1.metric("Total Cobrado", f"{moneda}{total_cobrado:,.2f}")
-        col_met2.metric("Costos Producción Directos", f"{moneda}{total_costos_ent:,.2f}")
-        col_met3.metric("Ganancia Neta en Entregados", f"{moneda}{ganancia_ent:,.2f}")
+        col_met2.metric("Costos Producción", f"{moneda}{total_costos_ent:,.2f}")
+        col_met3.metric("Ganancia Neta", f"{moneda}{ganancia_ent:,.2f}")
 
         st.divider()
 
-        busq_ent = st.text_input("🔍 Buscar en historial de entregados (Cliente o Trabajo):", key="busq_ent_key")
+        busq_ent = st.text_input("🔍 Buscar:", key="busq_ent_key", placeholder="Cliente o trabajo...")
         if busq_ent:
             df_entregados = df_entregados[
                 df_entregados['Cliente'].str.contains(busq_ent, case=False, na=False) |
@@ -969,61 +918,53 @@ elif st.session_state.seccion_activa == "Entregados":
 # VISTA 5: PROVEEDORES Y COMPRAS
 # ==========================================
 elif st.session_state.seccion_activa == "Compras":
-    st.subheader("🛒 Registro de Facturas y Compras")
+    st.subheader("🛒 Registro de Compras")
     
-    df_compras = run_query(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'N° Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
+    df_compras = run_query(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
     
-    col_c1, col_c2 = st.columns([1.5, 1])
-    
-    with col_c1:
-        with st.expander("➕ Cargar Nueva Compra / Factura", expanded=False):
-            with st.form("form_compra", clear_on_submit=True):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    proveedor = st.text_input("Proveedor *")
-                    factura = st.text_input("N° Factura / Remito")
-                with col2:
-                    fecha_compra = st.date_input("Fecha de Compra", value=date.today())
-                    producto = st.text_input("Producto / Material (ej: Vinilo, Lona, Tintas) *")
-                with col3:
-                    costo_compra = st.number_input(f"Costo Total ({moneda}) *", min_value=0.0, step=100.0)
-                
-                submit_compra = st.form_submit_button("Guardar Factura / Compra")
-                
-                if submit_compra:
-                    if proveedor.strip() and producto.strip() and costo_compra > 0:
-                        if IS_POSTGRES:
-                            run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (:f, :p, :fe, :pr, :c)",
-                                      {"f": factura, "p": proveedor, "fe": fecha_compra, "pr": producto, "c": costo_compra}, fetch=False)
-                        else:
-                            run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
-                                      (factura, proveedor, fecha_compra, producto, costo_compra), fetch=False)
-                        st.success("Compra guardada correctamente.")
-                        st.rerun()
-
-    with col_c2:
-        with st.expander("🗑️ Borrar Factura / Compra", expanded=False):
-            if not df_compras.empty:
-                opciones_c_del = {
-                    f"#{row['ID']} - {row['Proveedor']} ({row['Producto']}) - {moneda}{row[f'Costo ({moneda})']:,.0f}": row['ID']
-                    for _, row in df_compras.iterrows()
-                }
-                c_del_sel = st.selectbox("Seleccionar compra a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
-                c_del_id = opciones_c_del[c_del_sel]
-                
-                st.write("")
-                if st.button(f"❌ Borrar Factura #{c_del_id}", type="primary", use_container_width=True):
+    with st.expander("➕ Cargar Nueva Compra", expanded=False):
+        with st.form("form_compra", clear_on_submit=True):
+            proveedor = st.text_input("Proveedor *")
+            factura = st.text_input("N° Factura / Remito")
+            fecha_compra = st.date_input("Fecha de Compra", value=date.today())
+            producto = st.text_input("Producto / Material *")
+            costo_compra = st.number_input(f"Costo Total ({moneda}) *", min_value=0.0, step=100.0)
+            
+            submit_compra = st.form_submit_button("Guardar Factura / Compra", use_container_width=True)
+            
+            if submit_compra:
+                if proveedor.strip() and producto.strip() and costo_compra > 0:
                     if IS_POSTGRES:
-                        run_query("DELETE FROM compras WHERE id = :id", {"id": c_del_id}, fetch=False)
+                        run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (:f, :p, :fe, :pr, :c)",
+                                  {"f": factura, "p": proveedor, "fe": fecha_compra, "pr": producto, "c": costo_compra}, fetch=False)
                     else:
-                        run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
-                    st.warning(f"Factura #{c_del_id} eliminada.")
+                        run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
+                                  (factura, proveedor, fecha_compra, producto, costo_compra), fetch=False)
+                    st.success("Compra guardada correctamente.")
                     st.rerun()
+
+    with st.expander("🗑️ Borrar Compra", expanded=False):
+        if not df_compras.empty:
+            opciones_c_del = {
+                f"#{row['ID']} - {row['Proveedor']} ({row['Producto']}) - {moneda}{row[f'Costo ({moneda})']:,.0f}": row['ID']
+                for _, row in df_compras.iterrows()
+            }
+            c_del_sel = st.selectbox("Seleccionar compra a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
+            c_del_id = opciones_c_del[c_del_sel]
+            
+            st.write("")
+            if st.button(f"❌ Borrar Factura #{c_del_id}", type="primary", use_container_width=True):
+                if IS_POSTGRES:
+                    run_query("DELETE FROM compras WHERE id = :id", {"id": c_del_id}, fetch=False)
+                else:
+                    run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
+                st.warning(f"Factura #{c_del_id} eliminada.")
+                st.rerun()
 
     st.divider()
 
     if not df_compras.empty:
-        busqueda_prov = st.text_input("🔍 Buscar en compras:", key="search_prov")
+        busqueda_prov = st.text_input("🔍 Buscar en compras:", key="search_prov", placeholder="Proveedor o producto...")
         if busqueda_prov:
             df_compras = df_compras[
                 df_compras['Proveedor'].str.contains(busqueda_prov, case=False, na=False) |
@@ -1035,7 +976,7 @@ elif st.session_state.seccion_activa == "Compras":
 # VISTA 6: BALANCE GENERAL
 # ==========================================
 elif st.session_state.seccion_activa == "Balance":
-    st.subheader("📊 Rendimiento Financiero del Taller")
+    st.subheader("📊 Rendimiento Financiero")
     
     df_ventas_total = run_query("SELECT SUM(precio_venta) as total_ventas FROM trabajos")
     df_gastos_total = run_query("SELECT SUM(costo) as total_gastos FROM compras")
@@ -1046,79 +987,63 @@ elif st.session_state.seccion_activa == "Balance":
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric(f"Ingresos Totales (Ventas)", f"{moneda}{total_ventas:,.2f}")
-    kpi2.metric(f"Egresos Totales (Compras)", f"{moneda}{total_gastos:,.2f}")
+    kpi1.metric(f"Ingresos", f"{moneda}{total_ventas:,.2f}")
+    kpi2.metric(f"Egresos", f"{moneda}{total_gastos:,.2f}")
     kpi3.metric(f"Ganancia Neta", f"{moneda}{ganancia_neta:,.2f}", delta=f"{moneda}{ganancia_neta:,.2f}")
-    kpi4.metric("Margen de Ganancia", f"{margen:.1f}%")
+    kpi4.metric("Margen", f"{margen:.1f}%")
 
     st.divider()
 
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("**Comparativa: Ventas vs Compras**")
-        df_comp = pd.DataFrame({
-            "Concepto": ["Ventas (Ingresos)", "Compras (Egresos)"],
-            f"Monto ({moneda})": [total_ventas, total_gastos]
-        })
-        fig_bar = px.bar(
-            df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
-            color_discrete_map={"Ventas (Ingresos)": "#3b82f6", "Compras (Egresos)": "#ef4444"},
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    with col_g2:
-        st.markdown("**Distribución de Trabajos por Tipo**")
-        df_tipos = run_query("SELECT tipo_trabajo AS 'Tipo', COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
-        if not df_tipos.empty:
-            fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
-            st.plotly_chart(fig_pie, use_container_width=True)
+    st.markdown("**Comparativa: Ventas vs Compras**")
+    df_comp = pd.DataFrame({
+        "Concepto": ["Ventas", "Compras"],
+        f"Monto ({moneda})": [total_ventas, total_gastos]
+    })
+    fig_bar = px.bar(
+        df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
+        color_discrete_map={"Ventas": "#3b82f6", "Compras": "#ef4444"},
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
 
 # ==========================================
 # VISTA 7: CONFIGURACIÓN
 # ==========================================
 elif st.session_state.seccion_activa == "Configuracion":
-    st.subheader("⚙️ Configuración General y Personalización")
+    st.subheader("⚙️ Configuración del Taller")
     
-    col_cfg1, col_cfg2 = st.columns(2)
-    
-    with col_cfg1:
-        st.markdown("### 🏢 Datos de la Marca y Taller")
-        with st.form("form_configuracion_ampliada"):
-            cfg_titulo = st.text_input("Nombre de la Empresa / Título Header:", value=titulo_actual)
-            cfg_subtitulo = st.text_input("Subtítulo del Hero:", value=subtitulo_actual)
-            cfg_tel = st.text_input("Teléfono / WhatsApp de contacto:", value=tel_empresa)
-            cfg_dir = st.text_input("Dirección / Ubicación:", value=dir_empresa)
-            cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD, €):", value=moneda)
-            cfg_pie = st.text_area("Leyenda / Pie en Presupuestos:", value=pie_empresa)
-            
-            guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
-            if guardar_cfg:
-                set_config("titulo_app", cfg_titulo.strip())
-                set_config("subtitulo_app", cfg_subtitulo.strip())
-                set_config("telefono_empresa", cfg_tel.strip())
-                set_config("direccion_empresa", cfg_dir.strip())
-                set_config("simbolo_moneda", cfg_moneda.strip() if cfg_moneda.strip() else "$")
-                set_config("mensaje_pie", cfg_pie.strip())
-                st.success("¡Configuración actualizada!")
-                st.rerun()
+    with st.form("form_configuracion_ampliada"):
+        cfg_titulo = st.text_input("Nombre de la Empresa:", value=titulo_actual)
+        cfg_subtitulo = st.text_input("Subtítulo:", value=subtitulo_actual)
+        cfg_tel = st.text_input("Teléfono / WhatsApp:", value=tel_empresa)
+        cfg_dir = st.text_input("Dirección:", value=dir_empresa)
+        cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD):", value=moneda)
+        cfg_pie = st.text_area("Leyenda en Presupuestos:", value=pie_empresa)
+        
+        guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
+        if guardar_cfg:
+            set_config("titulo_app", cfg_titulo.strip())
+            set_config("subtitulo_app", cfg_subtitulo.strip())
+            set_config("telefono_empresa", cfg_tel.strip())
+            set_config("direccion_empresa", cfg_dir.strip())
+            set_config("simbolo_moneda", cfg_moneda.strip() if cfg_moneda.strip() else "$")
+            set_config("mensaje_pie", cfg_pie.strip())
+            st.success("¡Configuración actualizada!")
+            st.rerun()
 
-    with col_cfg2:
-        st.markdown("### 🏷️ Tipos de Trabajo Sugeridos")
-        with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
-            nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Neón LED):")
-            btn_add_tipo = st.form_submit_button("➕ Agregar Sugerencia", use_container_width=True)
-            if btn_add_tipo:
-                if nuevo_tipo_txt.strip():
-                    try:
-                        if IS_POSTGRES:
-                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()}, fetch=False)
-                        else:
-                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
-                        st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
-                        st.rerun()
-                    except Exception:
-                        st.warning("Ese rubro ya existe.")
-                        st.rerun()
+    with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
+        nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Cartel Neón LED):")
+        btn_add_tipo = st.form_submit_button("➕ Agregar Rubro", use_container_width=True)
+        if btn_add_tipo:
+            if nuevo_tipo_txt.strip():
+                try:
+                    if IS_POSTGRES:
+                        run_query("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()}, fetch=False)
+                    else:
+                        run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
+                    st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
+                    st.rerun()
+                except Exception:
+                    st.warning("Ese rubro ya existe.")
                     except Exception:
                         st.warning("Ese rubro ya existe.")
