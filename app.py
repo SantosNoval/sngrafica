@@ -1005,7 +1005,7 @@ elif st.session_state.seccion_activa == "Clientes":
         
         st.divider()
 
-        # Botón de WhatsApp para aviso de trabajo listo
+        # Botón de WhatsApp para aviso de pedido listo
         st.markdown("### 📲 Enviar Aviso de Pedido Listo por WhatsApp")
         if not df_hist_trab.empty:
             opciones_trabajos_cli = {
@@ -1022,7 +1022,7 @@ elif st.session_state.seccion_activa == "Clientes":
             nombre_trab = str(trab_info['tipo_trabajo'])
             monto_tot = f"{float(trab_info['precio_venta'] or 0):,.2f}"
             
-            msg_personalizado = f"Hola, Tu trabajo {nombre_trab} está listo! el total es ${monto_tot} Gracias!"
+            msg_personalizado = f"Hola, Tu pedido {nombre_trab} está listo! el total es ${monto_tot} Gracias!"
             url_wsp_cli = f"https://wa.me/{tel_numeros}?text={urllib.parse.quote(msg_personalizado)}" if tel_numeros else "#"
             
             if tel_numeros:
