@@ -61,7 +61,6 @@ def run_execute_raw(query, params=()):
         cursor.execute(query, params)
         conn.commit()
         conn.close()
-    # Limpiamos caché de lecturas tras una modificación
     st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -228,7 +227,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- ESTILOS RESPONSIVE DARK Y PÍLDORAS ORIGINALES ----------------
+# ---------------- ESTILOS RESPONSIVE DARK Y PÍLDORAS ----------------
 st.markdown("""
 <style>
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {
@@ -264,7 +263,7 @@ st.markdown("""
         border-color: #3b82f6 !important;
     }
     
-    /* PÍLDORA ACTIVA (GLOBO DESTACADO) */
+    /* PÍLDORA ACTIVA */
     div.row-widget.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%) !important;
         color: #ffffff !important;
@@ -405,7 +404,7 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- BARRA HORIZONTAL DE PÍLDORAS ORIGINAL ----------------
+# ---------------- BARRA HORIZONTAL DE PÍLDORAS ----------------
 SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Compras", "Balance", "Ajustes"]
 
 if 'seccion_activa' not in st.session_state:
@@ -1047,7 +1046,7 @@ elif st.session_state.seccion_activa == "Insumos":
 # VISTA 6: COMPRAS Y FACTURAS
 # ==========================================
 elif st.session_state.seccion_activa == "Compras":
-    df_compras = fetch_data_cached(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
+    df_compras_raw = fetch_data_cached("SELECT id, fecha, factura, proveedor, producto, costo FROM compras ORDER BY fecha DESC, id DESC")
     
     with st.expander("➕ Cargar Factura / Compra de Insumos", expanded=False):
         with st.form("form_compra", clear_on_submit=True):
@@ -1073,10 +1072,10 @@ elif st.session_state.seccion_activa == "Compras":
                     st.rerun()
 
     with st.expander("🗑️ Borrar Compra / Factura", expanded=False):
-        if not df_compras.empty:
+        if not df_compras_raw.empty:
             opciones_c_del = {
-                f"#{row['ID']} - {row['Proveedor']} ({row['Producto']}) - {moneda}{row[f'Costo ({moneda})']:,.0f}": row['ID']
-                for _, row in df_compras.iterrows()
+                f"#{row['id']} - {row['proveedor']} ({row['producto']}) - {moneda}{row['costo']:,.0f}": row['id']
+                for _, row in df_compras_raw.iterrows()
             }
             c_del_sel = st.selectbox("Seleccionar factura a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
             c_del_id = opciones_c_del[c_del_sel]
@@ -1087,14 +1086,26 @@ elif st.session_state.seccion_activa == "Compras":
                 st.rerun()
 
     st.divider()
-    if not df_compras.empty:
+    if not df_compras_raw.empty:
+        df_compras_mostrar = df_compras_raw.copy()
         busqueda_prov = st.text_input("🔍 Buscar:", key="search_prov", placeholder="Proveedor o producto...")
         if busqueda_prov:
-            df_compras = df_compras[
-                df_compras['Proveedor'].str.contains(busqueda_prov, case=False, na=False) |
-                df_compras['Producto'].str.contains(busqueda_prov, case=False, na=False)
+            df_compras_mostrar = df_compras_mostrar[
+                df_compras_mostrar['proveedor'].str.contains(busqueda_prov, case=False, na=False) |
+                df_compras_mostrar['producto'].str.contains(busqueda_prov, case=False, na=False)
             ]
-        st.dataframe(df_compras, use_container_width=True)
+        
+        df_mostrar_compras = df_compras_mostrar.rename(columns={
+            'id': 'ID',
+            'fecha': 'Fecha',
+            'factura': 'Factura',
+            'proveedor': 'Proveedor',
+            'producto': 'Producto',
+            'costo': f'Costo ({moneda})'
+        })
+        st.dataframe(df_mostrar_compras, use_container_width=True)
+    else:
+        st.info("Todavía no hay compras cargadas.")
 
 # ==========================================
 # VISTA 7: BALANCE Y FINANZAS
@@ -1146,9 +1157,9 @@ elif st.session_state.seccion_activa == "Balance":
 
     with col_g2:
         st.markdown("**Distribución de Trabajos por Rubro**")
-        df_tipos = fetch_data_cached("SELECT tipo_trabajo AS 'Tipo', COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
+        df_tipos = fetch_data_cached("SELECT tipo_trabajo AS Tipo, COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
         if not df_tipos.empty:
-            fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
+            fig_pie = px.pie(df_tipos, values="cantidad", names="tipo", hole=0.4, template="plotly_dark")
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==========================================
