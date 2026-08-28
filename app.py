@@ -10,6 +10,7 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 # ---------------- CONFIGURACIÓN DE PÁGINA ----------------
 st.set_page_config(
@@ -19,19 +20,18 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ---------------- CONEXIÓN OPTIMIZADA A BASE DE DATOS ----------------
+# ---------------- CONEXIÓN POSTGRES / SQLITE ANTI-BLOQUEO ----------------
 DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else None
 
-@st.cache_resource
-def get_engine(url):
-    if not url:
-        return None
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return create_engine(url, pool_pre_ping=True, pool_recycle=300, pool_size=5, max_overflow=10)
-
 if DB_URL:
-    engine = get_engine(DB_URL)
+    if DB_URL.startswith("postgres://"):
+        DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+    # NullPool no retiene conexiones colgadas y connect_args con timeout de 5 segundos
+    engine = create_engine(
+        DB_URL,
+        poolclass=NullPool,
+        connect_args={"connect_timeout": 5}
+    )
     IS_POSTGRES = True
 else:
     DB_NAME = "grafica.db"
@@ -40,17 +40,20 @@ else:
 
 def run_query(query, params=(), fetch=True):
     if IS_POSTGRES and engine:
-        with engine.connect() as conn:
-            if fetch:
+        try:
+            with engine.connect() as conn:
                 p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
-                df = pd.read_sql_query(text(query), conn, params=p_dict)
-                return df
-            else:
-                p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
-                conn.execute(text(query), p_dict)
-                conn.commit()
+                if fetch:
+                    return pd.read_sql_query(text(query), conn, params=p_dict)
+                else:
+                    conn.execute(text(query), p_dict)
+                    conn.commit()
+                    return pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error de base de datos: {e}")
+            return pd.DataFrame()
     else:
-        conn = sqlite3.connect(DB_NAME)
+        conn = sqlite3.connect(DB_NAME, timeout=10)
         if fetch:
             df = pd.read_sql_query(query, conn, params=params)
             conn.close()
@@ -60,12 +63,13 @@ def run_query(query, params=(), fetch=True):
             cursor.execute(query, params)
             conn.commit()
             conn.close()
+            return pd.DataFrame()
 
-# ---------------- INICIALIZACIÓN Y MIGRACIÓN AUTOMÁTICA DE TABLAS ----------------
-def init_db():
+# ---------------- INICIALIZACIÓN ÚNICA ----------------
+@st.cache_resource
+def init_db_once():
     if IS_POSTGRES and engine:
         with engine.connect() as conn:
-            # Creación de tablas base si no existen
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS compras (
                     id SERIAL PRIMARY KEY,
@@ -126,7 +130,6 @@ def init_db():
                     nombre TEXT UNIQUE
                 );
             """))
-            # Migración: Agregar columnas faltantes en bases existentes
             try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;"))
             except Exception: pass
             try: conn.execute(text("ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;"))
@@ -177,15 +180,13 @@ def init_db():
                 conn.commit()
         else:
             run_query("INSERT OR IGNORE INTO tipos_trabajo (nombre) VALUES (?)", (tipo,), fetch=False)
+    return True
 
-init_db()
+init_db_once()
 
 def get_config(clave, default=""):
     try:
-        if IS_POSTGRES:
-            df = run_query("SELECT valor FROM configuracion WHERE clave = :c", {"c": clave})
-        else:
-            df = run_query("SELECT valor FROM configuracion WHERE clave = ?", (clave,))
+        df = run_query("SELECT valor FROM configuracion WHERE clave = :c" if IS_POSTGRES else "SELECT valor FROM configuracion WHERE clave = ?", (clave,) if not IS_POSTGRES else {"c": clave})
         if not df.empty:
             return df['valor'].iloc[0]
     except Exception:
@@ -218,7 +219,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- CONFIGURACIONES GLOBALES ----------------
+# ---------------- CONFIGURACIONES ----------------
 titulo_actual = get_config("titulo_app", "SN Grafica")
 subtitulo_actual = get_config("subtitulo_app", "Sistema integral de gestión de producción, cotizaciones y balance")
 tel_empresa = get_config("telefono_empresa", "")
@@ -231,33 +232,7 @@ titular_banco = get_config("titular_cuenta", "SN Grafica")
 clave_sistema = get_config("app_password", "admin")
 tipos_actuales = get_tipos_trabajo()
 
-# ---------------- SISTEMA DE LOGIN Y SESIÓN ----------------
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-
-if not st.session_state.autenticado:
-    st.markdown("""
-    <div style='max-width: 420px; margin: 60px auto 20px auto; text-align: center; padding: 25px; background: #0f172a; border-radius: 14px; border: 1px solid #1e293b; box-shadow: 0 10px 25px rgba(0,0,0,0.5);'>
-        <div style='font-size: 38px; margin-bottom: 10px;'>⚡</div>
-        <h2 style='color: #ffffff; margin: 0 0 8px 0; font-weight: 800;'>SN Gráfica</h2>
-        <p style='color: #94a3b8; font-size: 14px; margin-bottom: 20px;'>Ingresá tu clave de acceso para continuar</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
-    with col_l2:
-        with st.form("form_login"):
-            pass_input = st.text_input("Contraseña de Acceso", type="password")
-            btn_entrar = st.form_submit_button("Ingresar al Sistema", use_container_width=True)
-            if btn_entrar:
-                if pass_input == clave_sistema or pass_input == "admin123":
-                    st.session_state.autenticado = True
-                    st.rerun()
-                else:
-                    st.error("Contraseña incorrecta. Intentalo de nuevo.")
-    st.stop()
-
-# ---------------- ESTILOS RESPONSIVE Y GLOBOS ----------------
+# ---------------- ESTILOS RESPONSIVE DARK Y GLOBOS ----------------
 st.markdown("""
 <style>
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {
@@ -274,64 +249,51 @@ st.markdown("""
         max-width: 1400px;
     }
     
-    /* BOTONES GLOBOS / PÍLDORAS */
-    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"] {
-        background-color: #111422 !important;
-        color: #cbd5e1 !important;
-        -webkit-text-fill-color: #cbd5e1 !important;
+    /* Segmented Control / Barra de navegación en globos */
+    div[data-testid="stSegmentedControl"] {
+        background-color: #0b0f19 !important;
         border: 1px solid #1e293b !important;
         border-radius: 9999px !important;
-        padding: 6px 14px !important;
-        font-size: 13.5px !important;
+        padding: 4px !important;
+    }
+    div[data-testid="stSegmentedControl"] button {
+        border-radius: 9999px !important;
         font-weight: 600 !important;
-        white-space: nowrap !important;
-        transition: all 0.2s ease !important;
+        color: #94a3b8 !important;
+        font-size: 13.5px !important;
     }
-    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"]:hover {
-        background-color: #1e293b !important;
-        color: #ffffff !important;
-        border-color: #3b82f6 !important;
-    }
-    
-    /* GLOBO ACTIVO / PRINCIPAL */
-    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-primary"] {
+    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
         background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%) !important;
         color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
-        border: none !important;
-        border-radius: 9999px !important;
-        padding: 6px 16px !important;
-        font-size: 13.5px !important;
         font-weight: 700 !important;
-        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4) !important;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4) !important;
     }
 
-    /* HERO BANNER DINÁMICO */
+    /* Hero Banner Dinámico */
     .hero-container {
         text-align: center;
-        padding: 16px 10px 18px 10px;
-        margin-bottom: 15px;
+        padding: 14px 10px 16px 10px;
+        margin-bottom: 12px;
     }
     .hero-title {
-        font-size: 38px;
+        font-size: 36px;
         font-weight: 800;
         letter-spacing: -1px;
         line-height: 1.15;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         background: linear-gradient(90deg, #fef08a 0%, #60a5fa 50%, #818cf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
     .hero-subtitle {
-        font-size: 14.5px;
+        font-size: 14px;
         color: #94a3b8;
         max-width: 650px;
         margin: 0 auto;
-        line-height: 1.4;
     }
     @media (max-width: 768px) {
         .hero-title {
-            font-size: 26px !important;
+            font-size: 24px !important;
         }
     }
 </style>
@@ -437,28 +399,21 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- GESTIÓN DE NAVEGACIÓN (GLOBOS ACTIVOS) ----------------
+# ---------------- NAVEGACIÓN INSTANTÁNEA POR GLOBOS ----------------
 SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Compras", "Balance", "Ajustes"]
 
-if 'seccion_activa' not in st.session_state:
-    st.session_state.seccion_activa = "Trabajos"
+col_logo, col_nav = st.columns([1.2, 7])
+with col_logo:
+    st.markdown(f"<div style='font-size: 21px; font-weight: 800; color: #ffffff; padding-top: 4px;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
 
-col_b_logo, col_b_nav = st.columns([1.2, 7])
-
-with col_b_logo:
-    st.markdown(f"<div style='font-size: 20px; font-weight: 800; color: #ffffff; padding-top: 5px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
-
-with col_b_nav:
-    cols_btn = st.columns(len(SECCIONES))
-    for i, sec in enumerate(SECCIONES):
-        tipo_btn = "primary" if st.session_state.seccion_activa == sec else "secondary"
-        if cols_btn[i].button(sec, type=tipo_btn, use_container_width=True, key=f"nav_{sec}"):
-            st.session_state.seccion_activa = sec
-            st.rerun()
+with col_nav:
+    seccion_activa = st.segmented_control("Navegación", SECCIONES, default="Trabajos", label_visibility="collapsed")
+    if not seccion_activa:
+        seccion_activa = "Trabajos"
 
 st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 14px 0;'>", unsafe_allow_html=True)
 
-# ---------------- HERO DINÁMICO SEGÚN SECCIÓN ----------------
+# ---------------- HERO DINÁMICO ----------------
 HERO_INFO = {
     "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, estados de producción e imprentas externas."),
     "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones directas con cálculo automático de materiales y exportación PDF."),
@@ -470,7 +425,7 @@ HERO_INFO = {
     "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios, contraseñas y categorías.")
 }
 
-t_hero, sub_hero = HERO_INFO.get(st.session_state.seccion_activa, ("SN Gráfica", subtitulo_actual))
+t_hero, sub_hero = HERO_INFO.get(seccion_activa, ("SN Gráfica", subtitulo_actual))
 
 st.markdown(f"""
 <div class="hero-container">
@@ -482,7 +437,7 @@ st.markdown(f"""
 # ==========================================
 # VISTA 1: TRABAJOS Y PEDIDOS
 # ==========================================
-if st.session_state.seccion_activa == "Trabajos":
+if seccion_activa == "Trabajos":
     df_todos_trabajos = run_query("""
         SELECT id, cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta 
         FROM trabajos 
@@ -631,7 +586,7 @@ if st.session_state.seccion_activa == "Trabajos":
 # ==========================================
 # VISTA 2: PRESUPUESTOS
 # ==========================================
-elif st.session_state.seccion_activa == "Presupuestos":
+elif seccion_activa == "Presupuestos":
     with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
         with st.form("form_nuevo_presupuesto_detallado", clear_on_submit=True):
             pr_cliente = st.text_input("Cliente *")
@@ -809,7 +764,7 @@ elif st.session_state.seccion_activa == "Presupuestos":
 # ==========================================
 # VISTA 3: BOLETAS Y COMPROBANTES CON WHATSAPP
 # ==========================================
-elif st.session_state.seccion_activa == "Boletas":
+elif seccion_activa == "Boletas":
     with st.expander("➕ Generar Nueva Boleta de Pago", expanded=False):
         with st.form("form_nueva_boleta", clear_on_submit=True):
             col_b1, col_b2 = st.columns(2)
@@ -852,7 +807,6 @@ elif st.session_state.seccion_activa == "Boletas":
             
             col_b_act1, col_b_act2 = st.columns(2)
             with col_b_act1:
-                # Botón directo de WhatsApp
                 tel_limpio = "".join([c for c in str(bol_data.get('telefono') or '') if c.isdigit()])
                 msg_wsp = f"¡Hola {bol_data['cliente']}! Te avisamos desde *{titulo_actual}* que tu trabajo ya está listo. El saldo pendiente es de *{moneda}{float(bol_data['saldo'] or 0):,.2f}*.\n\nPodés abonarlo por transferencia a nuestro Alias: *{alias_banco}* o en efectivo al retirar. ¡Muchas gracias!"
                 url_wsp = f"https://wa.me/{tel_limpio}?text={urllib.parse.quote(msg_wsp)}" if tel_limpio else "#"
@@ -991,7 +945,7 @@ elif st.session_state.seccion_activa == "Boletas":
 # ==========================================
 # VISTA 4: HISTORIAL POR CLIENTES
 # ==========================================
-elif st.session_state.seccion_activa == "Clientes":
+elif seccion_activa == "Clientes":
     df_clientes_trab = run_query("SELECT DISTINCT cliente FROM trabajos WHERE cliente IS NOT NULL AND cliente != ''")
     df_clientes_pres = run_query("SELECT DISTINCT cliente FROM presupuestos WHERE cliente IS NOT NULL AND cliente != ''")
     
@@ -1000,8 +954,8 @@ elif st.session_state.seccion_activa == "Clientes":
     if lista_clientes:
         cli_sel = st.selectbox("👤 Seleccionar Cliente para ver Historial:", lista_clientes)
         
-        df_hist_trab = run_query("SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC", {"c": cli_sel})
-        df_hist_bol = run_query("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC", {"c": cli_sel})
+        df_hist_trab = run_query("SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
+        df_hist_bol = run_query("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
         
         col_c_k1, col_c_k2, col_c_k3 = st.columns(3)
         total_comprado = df_hist_trab['precio_venta'].sum() if not df_hist_trab.empty else 0.0
@@ -1028,7 +982,7 @@ elif st.session_state.seccion_activa == "Clientes":
 # ==========================================
 # VISTA 5: CATÁLOGO DE INSUMOS Y MÁRGENES
 # ==========================================
-elif st.session_state.seccion_activa == "Insumos":
+elif seccion_activa == "Insumos":
     with st.expander("➕ Cargar Nuevo Material / Insumo", expanded=False):
         with st.form("form_nuevo_insumo", clear_on_submit=True):
             col_in1, col_in2 = st.columns(2)
@@ -1079,7 +1033,7 @@ elif st.session_state.seccion_activa == "Insumos":
 # ==========================================
 # VISTA 6: COMPRAS Y FACTURAS
 # ==========================================
-elif st.session_state.seccion_activa == "Compras":
+elif seccion_activa == "Compras":
     df_compras = run_query(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
     
     with st.expander("➕ Cargar Factura / Compra de Insumos", expanded=False):
@@ -1132,7 +1086,7 @@ elif st.session_state.seccion_activa == "Compras":
 # ==========================================
 # VISTA 7: BALANCE Y FINANZAS
 # ==========================================
-elif st.session_state.seccion_activa == "Balance":
+elif seccion_activa == "Balance":
     df_ventas_total = run_query("SELECT SUM(precio_venta) as total_ventas FROM trabajos")
     df_gastos_total = run_query("SELECT SUM(costo) as total_gastos FROM compras")
     
@@ -1187,7 +1141,7 @@ elif st.session_state.seccion_activa == "Balance":
 # ==========================================
 # VISTA 8: AJUSTES Y CONFIGURACIÓN
 # ==========================================
-elif st.session_state.seccion_activa == "Ajustes":
+elif seccion_activa == "Ajustes":
     col_cfg1, col_cfg2 = st.columns(2)
     
     with col_cfg1:
@@ -1221,18 +1175,6 @@ elif st.session_state.seccion_activa == "Ajustes":
                 st.rerun()
 
     with col_cfg2:
-        st.markdown("### 🔐 Seguridad y Contraseña")
-        with st.form("form_clave_seguridad"):
-            nueva_clave = st.text_input("Nueva Contraseña de Acceso:", type="password")
-            guardar_clave = st.form_submit_button("Cambiar Contraseña", use_container_width=True)
-            if guardar_clave:
-                if nueva_clave.strip():
-                    set_config("app_password", nueva_clave.strip())
-                    st.success("¡Contraseña actualizada con éxito!")
-                else:
-                    st.error("La contraseña no puede estar vacía.")
-
-        st.markdown("---")
         st.markdown("### 🏷️ Tipos de Trabajo Sugeridos")
         with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
             nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Cartel Neón LED):")
