@@ -168,7 +168,8 @@ def init_db_tables():
         "simbolo_moneda": "$",
         "alias_bancario": "SNGRAFICA.MP",
         "cbu_bancario": "",
-        "titular_cuenta": "SN Grafica"
+        "titular_cuenta": "SN Grafica",
+        "mensaje_wsp_custom": "Hola, Tu pedido {trabajo} está listo! el total es ${total} Gracias!"
     }
     for k, v in configs_defecto.items():
         if IS_POSTGRES:
@@ -210,6 +211,7 @@ moneda = config_map.get("simbolo_moneda", "$")
 alias_banco = config_map.get("alias_bancario", "SNGRAFICA.MP")
 cbu_banco = config_map.get("cbu_bancario", "")
 titular_banco = config_map.get("titular_cuenta", "SN Grafica")
+msg_wsp_template = config_map.get("mensaje_wsp_custom", "Hola, Tu pedido {trabajo} está listo! el total es ${total} Gracias!")
 
 @st.cache_data(ttl=120, show_spinner=False)
 def get_tipos_trabajo_cached():
@@ -439,7 +441,7 @@ HERO_INFO = {
     "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
     "Compras": ("Registro de Facturas y Proveedores", "Control de gastos en materiales e insumos de imprenta."),
     "Balance": ("Rendimiento Financiero y Caja", "Ingresos, egresos, ganancia neta y balance por método de pago."),
-    "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios y categorías.")
+    "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios, mensajes de WhatsApp y categorías.")
 }
 
 t_hero, sub_hero = HERO_INFO.get(st.session_state.seccion_activa, ("SN Gráfica", subtitulo_actual))
@@ -987,7 +989,6 @@ elif st.session_state.seccion_activa == "Clientes":
         df_hist_trab = run_query_raw("SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
         df_hist_bol = run_query_raw("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
         
-        # Obtener teléfono registrado más reciente
         tel_encontrado = ""
         if not df_hist_trab.empty and df_hist_trab['telefono'].dropna().any():
             for t in df_hist_trab['telefono'].dropna():
@@ -1012,17 +1013,27 @@ elif st.session_state.seccion_activa == "Clientes":
                 f"#{row['id']} - {row['tipo_trabajo']} ({moneda}{float(row['precio_venta'] or 0):,.0f})": row
                 for _, row in df_hist_trab.iterrows()
             }
-            sel_trab_wsp = st.selectbox("Elegí el trabajo a notificar:", list(opciones_trabajos_cli.keys()), key="sel_t_wsp_cli")
+            sel_trab_wsp = st.selectbox("Elegí el pedido a notificar:", list(opciones_trabajos_cli.keys()), key=f"sel_t_wsp_{cli_sel}")
             trab_info = opciones_trabajos_cli[sel_trab_wsp]
             
             tel_actual_trab = str(trab_info.get('telefono') or tel_encontrado)
-            tel_wsp_input = st.text_input("Número de Teléfono / WhatsApp:", value=tel_actual_trab, placeholder="ej: 5491112345678", key="input_wsp_cli")
+            tel_wsp_input = st.text_input("Número de Teléfono / WhatsApp:", value=tel_actual_trab, placeholder="ej: 5491112345678", key=f"input_wsp_{trab_info['id']}")
             
             tel_numeros = "".join([c for c in tel_wsp_input if c.isdigit()])
             nombre_trab = str(trab_info['tipo_trabajo'])
             monto_tot = f"{float(trab_info['precio_venta'] or 0):,.2f}"
             
-            msg_personalizado = f"Hola, Tu pedido {nombre_trab} está listo! el total es ${monto_tot} Gracias!"
+            # Formatear plantilla personalizada configurada en Ajustes
+            try:
+                msg_personalizado = msg_wsp_template.format(
+                    cliente=cli_sel,
+                    trabajo=nombre_trab,
+                    total=monto_tot,
+                    alias=alias_banco
+                )
+            except Exception:
+                msg_personalizado = f"Hola, Tu pedido {nombre_trab} está listo! el total es ${monto_tot} Gracias!"
+                
             url_wsp_cli = f"https://wa.me/{tel_numeros}?text={urllib.parse.quote(msg_personalizado)}" if tel_numeros else "#"
             
             if tel_numeros:
@@ -1233,11 +1244,16 @@ elif st.session_state.seccion_activa == "Ajustes":
             cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD):", value=moneda)
             
             st.markdown("---")
-            st.markdown("**💳 Datos de Cobro (Aparecen en Boletas y WhatsApp)**")
+            st.markdown("**💳 Datos de Cobro (Aparecen en Boletas)**")
             cfg_alias = st.text_input("Alias Bancario / MP:", value=alias_banco)
             cfg_cbu = st.text_input("CBU / CVU:", value=cbu_banco)
             cfg_titular = st.text_input("Titular de la Cuenta:", value=titular_banco)
             cfg_pie = st.text_area("Leyenda en Presupuestos:", value=pie_empresa)
+            
+            st.markdown("---")
+            st.markdown("### 📲 Mensaje Predeterminado de WhatsApp")
+            st.caption("Podés usar las variables automáticas: `{cliente}`, `{trabajo}`, `{total}`, `{alias}`")
+            cfg_msg_wsp = st.text_area("Plantilla de Mensaje para Clientes:", value=msg_wsp_template, height=90)
             
             guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
             if guardar_cfg:
@@ -1250,7 +1266,8 @@ elif st.session_state.seccion_activa == "Ajustes":
                     "alias_bancario": cfg_alias.strip(),
                     "cbu_bancario": cfg_cbu.strip(),
                     "titular_cuenta": cfg_titular.strip(),
-                    "mensaje_pie": cfg_pie.strip()
+                    "mensaje_pie": cfg_pie.strip(),
+                    "mensaje_wsp_custom": cfg_msg_wsp.strip()
                 }
                 for k, v in configs_update.items():
                     if IS_POSTGRES:
