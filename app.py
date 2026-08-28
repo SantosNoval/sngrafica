@@ -10,64 +10,67 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from sqlalchemy import create_engine, text
-from sqlalchemy.pool import NullPool
 
 # ---------------- CONFIGURACIÓN DE PÁGINA ----------------
 st.set_page_config(
-    page_title="SN Grafica - Sistema Integral",
+    page_title="SN Grafica - Sistema de Gestión",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ---------------- CONEXIÓN POSTGRES / SQLITE ANTI-BLOQUEO ----------------
+# ---------------- CONEXIÓN A BASE DE DATOS ----------------
 DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else None
 
+@st.cache_resource
+def get_db_engine(url):
+    if not url:
+        return None
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return create_engine(url, pool_size=5, max_overflow=10, pool_pre_ping=True, pool_recycle=300)
+
 if DB_URL:
-    if DB_URL.startswith("postgres://"):
-        DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
-    # NullPool no retiene conexiones colgadas y connect_args con timeout de 5 segundos
-    engine = create_engine(
-        DB_URL,
-        poolclass=NullPool,
-        connect_args={"connect_timeout": 5}
-    )
+    engine = get_db_engine(DB_URL)
     IS_POSTGRES = True
 else:
     DB_NAME = "grafica.db"
     engine = None
     IS_POSTGRES = False
 
-def run_query(query, params=(), fetch=True):
+def run_query_raw(query, params=()):
     if IS_POSTGRES and engine:
-        try:
-            with engine.connect() as conn:
-                p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
-                if fetch:
-                    return pd.read_sql_query(text(query), conn, params=p_dict)
-                else:
-                    conn.execute(text(query), p_dict)
-                    conn.commit()
-                    return pd.DataFrame()
-        except Exception as e:
-            st.error(f"Error de base de datos: {e}")
-            return pd.DataFrame()
+        with engine.connect() as conn:
+            p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
+            return pd.read_sql_query(text(query), conn, params=p_dict)
     else:
-        conn = sqlite3.connect(DB_NAME, timeout=10)
-        if fetch:
-            df = pd.read_sql_query(query, conn, params=params)
-            conn.close()
-            return df
-        else:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            conn.commit()
-            conn.close()
-            return pd.DataFrame()
+        conn = sqlite3.connect(DB_NAME)
+        df = pd.read_sql_query(query, conn, params=params)
+        conn.close()
+        return df
 
-# ---------------- INICIALIZACIÓN ÚNICA ----------------
+def run_execute_raw(query, params=()):
+    if IS_POSTGRES and engine:
+        with engine.connect() as conn:
+            p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
+            conn.execute(text(query), p_dict)
+            conn.commit()
+    else:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        conn.commit()
+        conn.close()
+    # Limpiamos caché de lecturas tras una modificación
+    st.cache_data.clear()
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_data_cached(query, params_tuple=()):
+    return run_query_raw(query, params_tuple)
+
+# ---------------- INICIALIZACIÓN DE TABLAS ----------------
 @st.cache_resource
-def init_db_once():
+def init_db_tables():
     if IS_POSTGRES and engine:
         with engine.connect() as conn:
             conn.execute(text("""
@@ -161,8 +164,7 @@ def init_db_once():
         "simbolo_moneda": "$",
         "alias_bancario": "SNGRAFICA.MP",
         "cbu_bancario": "",
-        "titular_cuenta": "SN Grafica",
-        "app_password": "admin"
+        "titular_cuenta": "SN Grafica"
     }
     for k, v in configs_defecto.items():
         if IS_POSTGRES:
@@ -170,7 +172,7 @@ def init_db_once():
                 conn.execute(text("INSERT INTO configuracion (clave, valor) VALUES (:k, :v) ON CONFLICT (clave) DO NOTHING"), {"k": k, "v": v})
                 conn.commit()
         else:
-            run_query("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v), fetch=False)
+            run_execute_raw("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v))
     
     tipos_base = ["Cartelería / Lona", "Stickers / Vinilo de Corte", "Impresión UV / Rígidos", "Sublimación / Textil", "Diseño Gráfico", "Plotter Vehicular", "Varios"]
     for tipo in tipos_base:
@@ -179,36 +181,43 @@ def init_db_once():
                 conn.execute(text("INSERT INTO tipos_trabajo (nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": tipo})
                 conn.commit()
         else:
-            run_query("INSERT OR IGNORE INTO tipos_trabajo (nombre) VALUES (?)", (tipo,), fetch=False)
+            run_execute_raw("INSERT OR IGNORE INTO tipos_trabajo (nombre) VALUES (?)", (tipo,))
     return True
 
-init_db_once()
+init_db_tables()
 
-def get_config(clave, default=""):
+@st.cache_data(ttl=120, show_spinner=False)
+def get_all_configs():
     try:
-        df = run_query("SELECT valor FROM configuracion WHERE clave = :c" if IS_POSTGRES else "SELECT valor FROM configuracion WHERE clave = ?", (clave,) if not IS_POSTGRES else {"c": clave})
+        df = fetch_data_cached("SELECT clave, valor FROM configuracion")
         if not df.empty:
-            return df['valor'].iloc[0]
+            return dict(zip(df['clave'], df['valor']))
     except Exception:
         pass
-    return default
+    return {}
 
-def set_config(clave, valor):
-    if IS_POSTGRES:
-        with engine.connect() as conn:
-            conn.execute(text("INSERT INTO configuracion (clave, valor) VALUES (:c, :v) ON CONFLICT (clave) DO UPDATE SET valor = :v"), {"c": clave, "v": valor})
-            conn.commit()
-    else:
-        run_query("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (clave, valor), fetch=False)
+config_map = get_all_configs()
+titulo_actual = config_map.get("titulo_app", "SN Grafica")
+subtitulo_actual = config_map.get("subtitulo_app", "Sistema integral de gestión de producción, cotizaciones y balance")
+tel_empresa = config_map.get("telefono_empresa", "")
+dir_empresa = config_map.get("direccion_empresa", "")
+pie_empresa = config_map.get("mensaje_pie", "Presupuesto válido por 15 días.")
+moneda = config_map.get("simbolo_moneda", "$")
+alias_banco = config_map.get("alias_bancario", "SNGRAFICA.MP")
+cbu_banco = config_map.get("cbu_bancario", "")
+titular_banco = config_map.get("titular_cuenta", "SN Grafica")
 
-def get_tipos_trabajo():
+@st.cache_data(ttl=120, show_spinner=False)
+def get_tipos_trabajo_cached():
     try:
-        df = run_query("SELECT nombre FROM tipos_trabajo ORDER BY nombre ASC")
+        df = fetch_data_cached("SELECT nombre FROM tipos_trabajo ORDER BY nombre ASC")
         if not df.empty:
             return df['nombre'].tolist()
     except Exception:
         pass
     return ["Cartelería / Lona", "Stickers / Vinilo de Corte", "Impresión UV / Rígidos", "Sublimación / Textil", "Diseño Gráfico", "Plotter Vehicular", "Varios"]
+
+tipos_actuales = get_tipos_trabajo_cached()
 
 ESTADOS_TRABAJO = ["Pendiente", "En Taller Externo", "Listo para Armar", "Listo para Entrega", "Entregado y Cobrado"]
 ESTADO_BADGES = {
@@ -219,20 +228,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- CONFIGURACIONES ----------------
-titulo_actual = get_config("titulo_app", "SN Grafica")
-subtitulo_actual = get_config("subtitulo_app", "Sistema integral de gestión de producción, cotizaciones y balance")
-tel_empresa = get_config("telefono_empresa", "")
-dir_empresa = get_config("direccion_empresa", "")
-pie_empresa = get_config("mensaje_pie", "Presupuesto válido por 15 días.")
-moneda = get_config("simbolo_moneda", "$")
-alias_banco = get_config("alias_bancario", "SNGRAFICA.MP")
-cbu_banco = get_config("cbu_bancario", "")
-titular_banco = get_config("titular_cuenta", "SN Grafica")
-clave_sistema = get_config("app_password", "admin")
-tipos_actuales = get_tipos_trabajo()
-
-# ---------------- ESTILOS RESPONSIVE DARK Y GLOBOS ----------------
+# ---------------- ESTILOS RESPONSIVE DARK Y PÍLDORAS ORIGINALES ----------------
 st.markdown("""
 <style>
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {
@@ -244,35 +240,47 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
     }
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0.8rem !important;
         padding-bottom: 2.5rem !important;
         max-width: 1400px;
     }
     
-    /* Segmented Control / Barra de navegación en globos */
-    div[data-testid="stSegmentedControl"] {
-        background-color: #0b0f19 !important;
+    /* PÍLDORAS INACTIVAS */
+    div.row-widget.stButton > button[kind="secondary"] {
+        background-color: #111422 !important;
+        color: #94a3b8 !important;
+        -webkit-text-fill-color: #94a3b8 !important;
         border: 1px solid #1e293b !important;
         border-radius: 9999px !important;
-        padding: 4px !important;
-    }
-    div[data-testid="stSegmentedControl"] button {
-        border-radius: 9999px !important;
-        font-weight: 600 !important;
-        color: #94a3b8 !important;
+        padding: 6px 12px !important;
         font-size: 13.5px !important;
+        font-weight: 600 !important;
+        transition: all 0.15s ease !important;
     }
-    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+    div.row-widget.stButton > button[kind="secondary"]:hover {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border-color: #3b82f6 !important;
+    }
+    
+    /* PÍLDORA ACTIVA (GLOBO DESTACADO) */
+    div.row-widget.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%) !important;
         color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border: none !important;
+        border-radius: 9999px !important;
+        padding: 6px 14px !important;
+        font-size: 13.5px !important;
         font-weight: 700 !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4) !important;
+        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.45) !important;
     }
 
-    /* Hero Banner Dinámico */
+    /* HERO DINÁMICO */
     .hero-container {
         text-align: center;
-        padding: 14px 10px 16px 10px;
+        padding: 14px 10px 18px 10px;
         margin-bottom: 12px;
     }
     .hero-title {
@@ -280,7 +288,7 @@ st.markdown("""
         font-weight: 800;
         letter-spacing: -1px;
         line-height: 1.15;
-        margin-bottom: 4px;
+        margin-bottom: 5px;
         background: linear-gradient(90deg, #fef08a 0%, #60a5fa 50%, #818cf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -292,9 +300,7 @@ st.markdown("""
         margin: 0 auto;
     }
     @media (max-width: 768px) {
-        .hero-title {
-            font-size: 24px !important;
-        }
+        .hero-title { font-size: 24px !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -399,17 +405,24 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- NAVEGACIÓN INSTANTÁNEA POR GLOBOS ----------------
+# ---------------- BARRA HORIZONTAL DE PÍLDORAS ORIGINAL ----------------
 SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Compras", "Balance", "Ajustes"]
 
-col_logo, col_nav = st.columns([1.2, 7])
-with col_logo:
-    st.markdown(f"<div style='font-size: 21px; font-weight: 800; color: #ffffff; padding-top: 4px;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
+if 'seccion_activa' not in st.session_state:
+    st.session_state.seccion_activa = "Trabajos"
 
-with col_nav:
-    seccion_activa = st.segmented_control("Navegación", SECCIONES, default="Trabajos", label_visibility="collapsed")
-    if not seccion_activa:
-        seccion_activa = "Trabajos"
+col_logo, col_pills = st.columns([1.3, 7])
+with col_logo:
+    st.markdown(f"<div style='font-size: 21px; font-weight: 800; color: #ffffff; padding-top: 4px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
+
+with col_pills:
+    p_cols = st.columns(len(SECCIONES))
+    for i, s in enumerate(SECCIONES):
+        btn_kind = "primary" if st.session_state.seccion_activa == s else "secondary"
+        if p_cols[i].button(s, key=f"pill_{s}", type=btn_kind, use_container_width=True):
+            if st.session_state.seccion_activa != s:
+                st.session_state.seccion_activa = s
+                st.rerun()
 
 st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 14px 0;'>", unsafe_allow_html=True)
 
@@ -422,10 +435,10 @@ HERO_INFO = {
     "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
     "Compras": ("Registro de Facturas y Proveedores", "Control de gastos en materiales e insumos de imprenta."),
     "Balance": ("Rendimiento Financiero y Caja", "Ingresos, egresos, ganancia neta y balance por método de pago."),
-    "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios, contraseñas y categorías.")
+    "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios y categorías.")
 }
 
-t_hero, sub_hero = HERO_INFO.get(seccion_activa, ("SN Gráfica", subtitulo_actual))
+t_hero, sub_hero = HERO_INFO.get(st.session_state.seccion_activa, ("SN Gráfica", subtitulo_actual))
 
 st.markdown(f"""
 <div class="hero-container">
@@ -437,8 +450,8 @@ st.markdown(f"""
 # ==========================================
 # VISTA 1: TRABAJOS Y PEDIDOS
 # ==========================================
-if seccion_activa == "Trabajos":
-    df_todos_trabajos = run_query("""
+if st.session_state.seccion_activa == "Trabajos":
+    df_todos_trabajos = fetch_data_cached("""
         SELECT id, cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta 
         FROM trabajos 
         ORDER BY fecha_entrega ASC, id DESC
@@ -466,11 +479,11 @@ if seccion_activa == "Trabajos":
             if guardar_nuevo:
                 if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
                     if IS_POSTGRES:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :te, :fc, :fe, :e, :cm, :pv)",
-                                  {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio}, fetch=False)
+                        run_execute_raw("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :te, :fc, :fe, :e, :cm, :pv)",
+                                        {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio})
                     else:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                  (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio), fetch=False)
+                        run_execute_raw("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio))
                     st.success("¡Trabajo guardado con éxito!")
                     st.rerun()
                 else:
@@ -508,11 +521,11 @@ if seccion_activa == "Trabajos":
                     if guardar_mod:
                         if ed_cliente.strip() and ed_trabajo.strip() and ed_precio > 0:
                             if IS_POSTGRES:
-                                run_query("UPDATE trabajos SET cliente=:c, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
-                                          {"c": ed_cliente.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": ed_fc, "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod}, fetch=False)
+                                run_execute_raw("UPDATE trabajos SET cliente=:c, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
+                                                {"c": ed_cliente.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": ed_fc, "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod})
                             else:
-                                run_query("UPDATE trabajos SET cliente=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
-                                          (ed_cliente.strip(), ed_trabajo.strip(), ed_taller.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod), fetch=False)
+                                run_execute_raw("UPDATE trabajos SET cliente=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
+                                                (ed_cliente.strip(), ed_trabajo.strip(), ed_taller.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod))
                             st.success("¡Trabajo actualizado!")
                             st.rerun()
 
@@ -529,9 +542,9 @@ if seccion_activa == "Trabajos":
                 st.write("")
                 if st.button(f"❌ Confirmar y Borrar #{id_borrar}", type="primary", use_container_width=True):
                     if IS_POSTGRES:
-                        run_query("DELETE FROM trabajos WHERE id=:id", {"id": id_borrar}, fetch=False)
+                        run_execute_raw("DELETE FROM trabajos WHERE id=:id", {"id": id_borrar})
                     else:
-                        run_query("DELETE FROM trabajos WHERE id=?", (id_borrar,), fetch=False)
+                        run_execute_raw("DELETE FROM trabajos WHERE id=?", (id_borrar,))
                     st.warning(f"Trabajo #{id_borrar} eliminado.")
                     st.rerun()
 
@@ -586,7 +599,7 @@ if seccion_activa == "Trabajos":
 # ==========================================
 # VISTA 2: PRESUPUESTOS
 # ==========================================
-elif seccion_activa == "Presupuestos":
+elif st.session_state.seccion_activa == "Presupuestos":
     with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
         with st.form("form_nuevo_presupuesto_detallado", clear_on_submit=True):
             pr_cliente = st.text_input("Cliente *")
@@ -609,15 +622,15 @@ elif seccion_activa == "Presupuestos":
                 total_calculado = pr_cant * pr_unitario
                 if pr_cliente.strip() and pr_unitario > 0:
                     if IS_POSTGRES:
-                        run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
-                                  {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": pr_detalle.strip(), "cant": pr_cant, "pu": pr_unitario, "pt": total_calculado, "cm": pr_costo_mat, "e": "Pendiente"}, fetch=False)
+                        run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
+                                        {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": pr_detalle.strip(), "cant": pr_cant, "pu": pr_unitario, "pt": total_calculado, "cm": pr_costo_mat, "e": "Pendiente"})
                     else:
-                        run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                  (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"), fetch=False)
+                        run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"))
                     st.success("¡Presupuesto guardado!")
                     st.rerun()
 
-    df_presupuestos = run_query("SELECT * FROM presupuestos ORDER BY id DESC")
+    df_presupuestos = fetch_data_cached("SELECT * FROM presupuestos ORDER BY id DESC")
     
     if not df_presupuestos.empty:
         opciones_pres = {
@@ -634,22 +647,22 @@ elif seccion_activa == "Presupuestos":
             with col_b_p1:
                 if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
                     if IS_POSTGRES:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :te, :fc, :fe, :e, :cm, :pv)",
-                                  {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "te": "", "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)}, fetch=False)
-                        run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id}, fetch=False)
+                        run_execute_raw("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :te, :fc, :fe, :e, :cm, :pv)",
+                                        {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "te": "", "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)})
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id})
                     else:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                  (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), "", str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)), fetch=False)
-                        run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,), fetch=False)
+                        run_execute_raw("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), "", str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)))
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,))
                     st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller!")
                     st.rerun()
             
             with col_b_p2:
                 if st.button("🗑️ Borrar Presupuesto", use_container_width=True, key=f"btn_del_pres_{pres_id}"):
                     if IS_POSTGRES:
-                        run_query("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id}, fetch=False)
+                        run_execute_raw("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id})
                     else:
-                        run_query("DELETE FROM presupuestos WHERE id = ?", (pres_id,), fetch=False)
+                        run_execute_raw("DELETE FROM presupuestos WHERE id = ?", (pres_id,))
                     st.warning(f"Presupuesto #{pres_id} eliminado.")
                     st.rerun()
 
@@ -764,7 +777,7 @@ elif seccion_activa == "Presupuestos":
 # ==========================================
 # VISTA 3: BOLETAS Y COMPROBANTES CON WHATSAPP
 # ==========================================
-elif seccion_activa == "Boletas":
+elif st.session_state.seccion_activa == "Boletas":
     with st.expander("➕ Generar Nueva Boleta de Pago", expanded=False):
         with st.form("form_nueva_boleta", clear_on_submit=True):
             col_b1, col_b2 = st.columns(2)
@@ -784,15 +797,15 @@ elif seccion_activa == "Boletas":
                 if b_cliente.strip() and b_total > 0:
                     saldo_calc = b_total - b_sena
                     if IS_POSTGRES:
-                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
-                                  {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "m": b_metodo, "tot": b_total, "s": b_sena, "sal": saldo_calc}, fetch=False)
+                        run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
+                                        {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "m": b_metodo, "tot": b_total, "s": b_sena, "sal": saldo_calc})
                     else:
-                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                  (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_metodo, b_total, b_sena, saldo_calc), fetch=False)
+                        run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_metodo, b_total, b_sena, saldo_calc))
                     st.success("¡Boleta generada con éxito!")
                     st.rerun()
 
-    df_boletas = run_query("SELECT * FROM boletas ORDER BY id DESC")
+    df_boletas = fetch_data_cached("SELECT * FROM boletas ORDER BY id DESC")
     
     if not df_boletas.empty:
         opciones_bol = {
@@ -819,9 +832,9 @@ elif seccion_activa == "Boletas":
             with col_b_act2:
                 if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
                     if IS_POSTGRES:
-                        run_query("DELETE FROM boletas WHERE id = :id", {"id": bol_id}, fetch=False)
+                        run_execute_raw("DELETE FROM boletas WHERE id = :id", {"id": bol_id})
                     else:
-                        run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
+                        run_execute_raw("DELETE FROM boletas WHERE id = ?", (bol_id,))
                     st.warning(f"Boleta #{bol_id} eliminada.")
                     st.rerun()
 
@@ -945,17 +958,17 @@ elif seccion_activa == "Boletas":
 # ==========================================
 # VISTA 4: HISTORIAL POR CLIENTES
 # ==========================================
-elif seccion_activa == "Clientes":
-    df_clientes_trab = run_query("SELECT DISTINCT cliente FROM trabajos WHERE cliente IS NOT NULL AND cliente != ''")
-    df_clientes_pres = run_query("SELECT DISTINCT cliente FROM presupuestos WHERE cliente IS NOT NULL AND cliente != ''")
+elif st.session_state.seccion_activa == "Clientes":
+    df_clientes_trab = fetch_data_cached("SELECT DISTINCT cliente FROM trabajos WHERE cliente IS NOT NULL AND cliente != ''")
+    df_clientes_pres = fetch_data_cached("SELECT DISTINCT cliente FROM presupuestos WHERE cliente IS NOT NULL AND cliente != ''")
     
     lista_clientes = sorted(list(set(df_clientes_trab['cliente'].tolist() + df_clientes_pres['cliente'].tolist()))) if (not df_clientes_trab.empty or not df_clientes_pres.empty) else []
     
     if lista_clientes:
         cli_sel = st.selectbox("👤 Seleccionar Cliente para ver Historial:", lista_clientes)
         
-        df_hist_trab = run_query("SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
-        df_hist_bol = run_query("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
+        df_hist_trab = run_query_raw("SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
+        df_hist_bol = run_query_raw("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
         
         col_c_k1, col_c_k2, col_c_k3 = st.columns(3)
         total_comprado = df_hist_trab['precio_venta'].sum() if not df_hist_trab.empty else 0.0
@@ -982,7 +995,7 @@ elif seccion_activa == "Clientes":
 # ==========================================
 # VISTA 5: CATÁLOGO DE INSUMOS Y MÁRGENES
 # ==========================================
-elif seccion_activa == "Insumos":
+elif st.session_state.seccion_activa == "Insumos":
     with st.expander("➕ Cargar Nuevo Material / Insumo", expanded=False):
         with st.form("form_nuevo_insumo", clear_on_submit=True):
             col_in1, col_in2 = st.columns(2)
@@ -998,17 +1011,17 @@ elif seccion_activa == "Insumos":
                 if in_nombre.strip() and in_costo > 0:
                     try:
                         if IS_POSTGRES:
-                            run_query("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (:n, :u, :c, :m)",
-                                      {"n": in_nombre.strip(), "u": in_unidad, "c": in_costo, "m": in_multi}, fetch=False)
+                            run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (:n, :u, :c, :m)",
+                                            {"n": in_nombre.strip(), "u": in_unidad, "c": in_costo, "m": in_multi})
                         else:
-                            run_query("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (?, ?, ?, ?)",
-                                      (in_nombre.strip(), in_unidad, in_costo, in_multi), fetch=False)
+                            run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (?, ?, ?, ?)",
+                                            (in_nombre.strip(), in_unidad, in_costo, in_multi))
                         st.success("¡Insumo guardado correctamente!")
                         st.rerun()
                     except Exception:
                         st.error("Ese insumo ya está cargado.")
 
-    df_insumos = run_query("SELECT id, nombre, unidad, costo_unitario, multiplicador_sugerido, (costo_unitario * multiplicador_sugerido) as precio_sugerido FROM insumos ORDER BY nombre ASC")
+    df_insumos = fetch_data_cached("SELECT id, nombre, unidad, costo_unitario, multiplicador_sugerido, (costo_unitario * multiplicador_sugerido) as precio_sugerido FROM insumos ORDER BY nombre ASC")
     
     if not df_insumos.empty:
         st.markdown("### 🏷️ Lista de Precios y Costos de Insumos")
@@ -1024,8 +1037,8 @@ elif seccion_activa == "Insumos":
             opc_in_del = {row['nombre']: row['id'] for _, row in df_insumos.iterrows()}
             sel_in_del = st.selectbox("Seleccionar insumo a borrar:", list(opc_in_del.keys()))
             if st.button("Eliminar Insumo"):
-                if IS_POSTGRES: run_query("DELETE FROM insumos WHERE id=:id", {"id": opc_in_del[sel_in_del]}, fetch=False)
-                else: run_query("DELETE FROM insumos WHERE id=?", (opc_in_del[sel_in_del],), fetch=False)
+                if IS_POSTGRES: run_execute_raw("DELETE FROM insumos WHERE id=:id", {"id": opc_in_del[sel_in_del]})
+                else: run_execute_raw("DELETE FROM insumos WHERE id=?", (opc_in_del[sel_in_del],))
                 st.rerun()
     else:
         st.info("Todavía no cargaste ningún insumo en el catálogo.")
@@ -1033,8 +1046,8 @@ elif seccion_activa == "Insumos":
 # ==========================================
 # VISTA 6: COMPRAS Y FACTURAS
 # ==========================================
-elif seccion_activa == "Compras":
-    df_compras = run_query(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
+elif st.session_state.seccion_activa == "Compras":
+    df_compras = fetch_data_cached(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
     
     with st.expander("➕ Cargar Factura / Compra de Insumos", expanded=False):
         with st.form("form_compra", clear_on_submit=True):
@@ -1051,11 +1064,11 @@ elif seccion_activa == "Compras":
             if submit_compra:
                 if proveedor.strip() and producto.strip() and costo_compra > 0:
                     if IS_POSTGRES:
-                        run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (:f, :p, :fe, :pr, :c)",
-                                  {"f": factura, "p": proveedor, "fe": fecha_compra, "pr": producto, "c": costo_compra}, fetch=False)
+                        run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (:f, :p, :fe, :pr, :c)",
+                                        {"f": factura, "p": proveedor, "fe": fecha_compra, "pr": producto, "c": costo_compra})
                     else:
-                        run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
-                                  (factura, proveedor, fecha_compra, producto, costo_compra), fetch=False)
+                        run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
+                                        (factura, proveedor, fecha_compra, producto, costo_compra))
                     st.success("Compra guardada correctamente.")
                     st.rerun()
 
@@ -1068,8 +1081,8 @@ elif seccion_activa == "Compras":
             c_del_sel = st.selectbox("Seleccionar factura a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
             c_del_id = opciones_c_del[c_del_sel]
             if st.button(f"❌ Borrar Factura #{c_del_id}", type="primary", use_container_width=True):
-                if IS_POSTGRES: run_query("DELETE FROM compras WHERE id = :id", {"id": c_del_id}, fetch=False)
-                else: run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
+                if IS_POSTGRES: run_execute_raw("DELETE FROM compras WHERE id = :id", {"id": c_del_id})
+                else: run_execute_raw("DELETE FROM compras WHERE id = ?", (c_del_id,))
                 st.warning(f"Factura #{c_del_id} eliminada.")
                 st.rerun()
 
@@ -1086,9 +1099,9 @@ elif seccion_activa == "Compras":
 # ==========================================
 # VISTA 7: BALANCE Y FINANZAS
 # ==========================================
-elif seccion_activa == "Balance":
-    df_ventas_total = run_query("SELECT SUM(precio_venta) as total_ventas FROM trabajos")
-    df_gastos_total = run_query("SELECT SUM(costo) as total_gastos FROM compras")
+elif st.session_state.seccion_activa == "Balance":
+    df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas FROM trabajos")
+    df_gastos_total = fetch_data_cached("SELECT SUM(costo) as total_gastos FROM compras")
     
     total_ventas = df_ventas_total['total_ventas'].iloc[0] or 0.0
     total_gastos = df_gastos_total['total_gastos'].iloc[0] or 0.0
@@ -1103,14 +1116,14 @@ elif seccion_activa == "Balance":
 
     st.divider()
     
-    df_pagos_metodo = run_query("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
+    df_pagos_metodo = fetch_data_cached("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
     if not df_pagos_metodo.empty:
         st.markdown("### 💵 Desglose de Cobranzas en Mano")
         col_caj1, col_caj2 = st.columns(2)
         for _, r in df_pagos_metodo.iterrows():
             met = r['metodo_pago'] or 'Efectivo (Caja Taller)'
             monto = r['total_cobrado'] or 0.0
-            if "Efectivo" in met:
+            if "Efectivo" in str(met):
                 col_caj1.metric("💵 Total en Efectivo (Caja Taller)", f"{moneda}{monto:,.2f}")
             else:
                 col_caj2.metric("🏦 Total en Banco / Mercado Pago", f"{moneda}{monto:,.2f}")
@@ -1133,7 +1146,7 @@ elif seccion_activa == "Balance":
 
     with col_g2:
         st.markdown("**Distribución de Trabajos por Rubro**")
-        df_tipos = run_query("SELECT tipo_trabajo AS 'Tipo', COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
+        df_tipos = fetch_data_cached("SELECT tipo_trabajo AS 'Tipo', COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
         if not df_tipos.empty:
             fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
             st.plotly_chart(fig_pie, use_container_width=True)
@@ -1141,7 +1154,7 @@ elif seccion_activa == "Balance":
 # ==========================================
 # VISTA 8: AJUSTES Y CONFIGURACIÓN
 # ==========================================
-elif seccion_activa == "Ajustes":
+elif st.session_state.seccion_activa == "Ajustes":
     col_cfg1, col_cfg2 = st.columns(2)
     
     with col_cfg1:
@@ -1162,15 +1175,22 @@ elif seccion_activa == "Ajustes":
             
             guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
             if guardar_cfg:
-                set_config("titulo_app", cfg_titulo.strip())
-                set_config("subtitulo_app", cfg_subtitulo.strip())
-                set_config("telefono_empresa", cfg_tel.strip())
-                set_config("direccion_empresa", cfg_dir.strip())
-                set_config("simbolo_moneda", cfg_moneda.strip() if cfg_moneda.strip() else "$")
-                set_config("alias_bancario", cfg_alias.strip())
-                set_config("cbu_bancario", cfg_cbu.strip())
-                set_config("titular_cuenta", cfg_titular.strip())
-                set_config("mensaje_pie", cfg_pie.strip())
+                configs_update = {
+                    "titulo_app": cfg_titulo.strip(),
+                    "subtitulo_app": cfg_subtitulo.strip(),
+                    "telefono_empresa": cfg_tel.strip(),
+                    "direccion_empresa": cfg_dir.strip(),
+                    "simbolo_moneda": cfg_moneda.strip() if cfg_moneda.strip() else "$",
+                    "alias_bancario": cfg_alias.strip(),
+                    "cbu_bancario": cfg_cbu.strip(),
+                    "titular_cuenta": cfg_titular.strip(),
+                    "mensaje_pie": cfg_pie.strip()
+                }
+                for k, v in configs_update.items():
+                    if IS_POSTGRES:
+                        run_execute_raw("INSERT INTO configuracion (clave, valor) VALUES (:c, :v) ON CONFLICT (clave) DO UPDATE SET valor = :v", {"c": k, "v": v})
+                    else:
+                        run_execute_raw("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v))
                 st.success("¡Configuración actualizada!")
                 st.rerun()
 
@@ -1183,9 +1203,9 @@ elif seccion_activa == "Ajustes":
                 if nuevo_tipo_txt.strip():
                     try:
                         if IS_POSTGRES:
-                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()}, fetch=False)
+                            run_execute_raw("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()})
                         else:
-                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
+                            run_execute_raw("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),))
                         st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
                         st.rerun()
                     except Exception:
