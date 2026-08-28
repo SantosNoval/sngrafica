@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ---------------- CONEXIÓN OPTIMIZADA (POOLING) ----------------
+# ---------------- CONEXIÓN OPTIMIZADA A BASE DE DATOS ----------------
 DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else None
 
 @st.cache_resource
@@ -42,10 +42,12 @@ def run_query(query, params=(), fetch=True):
     if IS_POSTGRES and engine:
         with engine.connect() as conn:
             if fetch:
-                df = pd.read_sql_query(text(query), conn, params=dict(enumerate(params)) if isinstance(params, (list, tuple)) else params)
+                p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
+                df = pd.read_sql_query(text(query), conn, params=p_dict)
                 return df
             else:
-                conn.execute(text(query), dict(enumerate(params)) if isinstance(params, (list, tuple)) else params)
+                p_dict = dict(enumerate(params)) if isinstance(params, (list, tuple)) else params
+                conn.execute(text(query), p_dict)
                 conn.commit()
     else:
         conn = sqlite3.connect(DB_NAME)
@@ -59,10 +61,11 @@ def run_query(query, params=(), fetch=True):
             conn.commit()
             conn.close()
 
-# ---------------- INICIALIZACIÓN DE BASE DE DATOS ----------------
+# ---------------- INICIALIZACIÓN Y MIGRACIÓN AUTOMÁTICA DE TABLAS ----------------
 def init_db():
     if IS_POSTGRES and engine:
         with engine.connect() as conn:
+            # Creación de tablas base si no existen
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS compras (
                     id SERIAL PRIMARY KEY,
@@ -123,6 +126,11 @@ def init_db():
                     nombre TEXT UNIQUE
                 );
             """))
+            # Migración: Agregar columnas faltantes en bases existentes
+            try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;"))
+            except Exception: pass
+            try: conn.execute(text("ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;"))
+            except Exception: pass
             conn.commit()
     else:
         conn = sqlite3.connect(DB_NAME)
@@ -134,6 +142,10 @@ def init_db():
         cursor.execute("CREATE TABLE IF NOT EXISTS insumos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, unidad TEXT, costo_unitario REAL, multiplicador_sugerido REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS tipos_trabajo (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE)")
+        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN taller_externo TEXT")
+        except Exception: pass
+        try: cursor.execute("ALTER TABLE boletas ADD COLUMN metodo_pago TEXT")
+        except Exception: pass
         conn.commit()
         conn.close()
 
@@ -236,7 +248,6 @@ if not st.session_state.autenticado:
     with col_l2:
         with st.form("form_login"):
             pass_input = st.text_input("Contraseña de Acceso", type="password")
-            recordar = st.checkbox("Mantener sesión abierta en este dispositivo", value=True)
             btn_entrar = st.form_submit_button("Ingresar al Sistema", use_container_width=True)
             if btn_entrar:
                 if pass_input == clave_sistema or pass_input == "admin123":
@@ -841,7 +852,7 @@ elif st.session_state.seccion_activa == "Boletas":
             
             col_b_act1, col_b_act2 = st.columns(2)
             with col_b_act1:
-                # Botón de WhatsApp
+                # Botón directo de WhatsApp
                 tel_limpio = "".join([c for c in str(bol_data.get('telefono') or '') if c.isdigit()])
                 msg_wsp = f"¡Hola {bol_data['cliente']}! Te avisamos desde *{titulo_actual}* que tu trabajo ya está listo. El saldo pendiente es de *{moneda}{float(bol_data['saldo'] or 0):,.2f}*.\n\nPodés abonarlo por transferencia a nuestro Alias: *{alias_banco}* o en efectivo al retirar. ¡Muchas gracias!"
                 url_wsp = f"https://wa.me/{tel_limpio}?text={urllib.parse.quote(msg_wsp)}" if tel_limpio else "#"
@@ -989,9 +1000,7 @@ elif st.session_state.seccion_activa == "Clientes":
     if lista_clientes:
         cli_sel = st.selectbox("👤 Seleccionar Cliente para ver Historial:", lista_clientes)
         
-        # Historial de Trabajos
         df_hist_trab = run_query("SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC", {"c": cli_sel})
-        # Historial de Boletas / Saldos
         df_hist_bol = run_query("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC", {"c": cli_sel})
         
         col_c_k1, col_c_k2, col_c_k3 = st.columns(3)
@@ -1140,7 +1149,6 @@ elif st.session_state.seccion_activa == "Balance":
 
     st.divider()
     
-    # Desglose de Caja por Método de Pago en Boletas
     df_pagos_metodo = run_query("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
     if not df_pagos_metodo.empty:
         st.markdown("### 💵 Desglose de Cobranzas en Mano")
