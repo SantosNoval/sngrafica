@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date, datetime
 import plotly.express as px
 import io
+import urllib.parse
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -12,13 +13,13 @@ from sqlalchemy import create_engine, text
 
 # ---------------- CONFIGURACIÓN DE PÁGINA ----------------
 st.set_page_config(
-    page_title="SN Grafica - Sistema de Gestión",
+    page_title="SN Grafica - Sistema Integral",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ---------------- CONEXIÓN OPTIMIZADA A BASE DE DATOS (CON CACHÉ Y POOLING) ----------------
+# ---------------- CONEXIÓN OPTIMIZADA (POOLING) ----------------
 DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else None
 
 @st.cache_resource
@@ -27,7 +28,6 @@ def get_engine(url):
         return None
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    # pool_pre_ping evita conexiones colgadas y recicla automáticamente
     return create_engine(url, pool_pre_ping=True, pool_recycle=300, pool_size=5, max_overflow=10)
 
 if DB_URL:
@@ -59,7 +59,7 @@ def run_query(query, params=(), fetch=True):
             conn.commit()
             conn.close()
 
-# ---------------- INICIALIZACIÓN DE TABLAS ----------------
+# ---------------- INICIALIZACIÓN DE BASE DE DATOS ----------------
 def init_db():
     if IS_POSTGRES and engine:
         with engine.connect() as conn:
@@ -78,6 +78,7 @@ def init_db():
                     fecha_entrega DATE,
                     cliente TEXT,
                     tipo_trabajo TEXT,
+                    taller_externo TEXT,
                     estado TEXT,
                     costo_material REAL,
                     precio_venta REAL
@@ -101,9 +102,17 @@ def init_db():
                     cliente TEXT,
                     telefono TEXT,
                     detalle TEXT,
+                    metodo_pago TEXT,
                     total REAL,
                     sena REAL,
                     saldo REAL
+                );
+                CREATE TABLE IF NOT EXISTS insumos (
+                    id SERIAL PRIMARY KEY,
+                    nombre TEXT UNIQUE,
+                    unidad TEXT,
+                    costo_unitario REAL,
+                    multiplicador_sugerido REAL
                 );
                 CREATE TABLE IF NOT EXISTS configuracion (
                     clave TEXT PRIMARY KEY,
@@ -119,9 +128,10 @@ def init_db():
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS compras (id INTEGER PRIMARY KEY AUTOINCREMENT, factura TEXT, proveedor TEXT, fecha DATE, producto TEXT, costo REAL)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, fecha_entrega DATE, cliente TEXT, tipo_trabajo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, fecha_entrega DATE, cliente TEXT, tipo_trabajo TEXT, taller_externo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS presupuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, detalle TEXT, cantidad REAL, precio_unitario REAL, precio_total REAL, costo_material REAL, estado TEXT)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS boletas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, detalle TEXT, total REAL, sena REAL, saldo REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS boletas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, detalle TEXT, metodo_pago TEXT, total REAL, sena REAL, saldo REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS insumos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, unidad TEXT, costo_unitario REAL, multiplicador_sugerido REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS tipos_trabajo (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE)")
         conn.commit()
@@ -133,7 +143,11 @@ def init_db():
         "telefono_empresa": "",
         "direccion_empresa": "",
         "mensaje_pie": "Presupuesto válido por 15 días. Documento no válido como factura fiscal.",
-        "simbolo_moneda": "$"
+        "simbolo_moneda": "$",
+        "alias_bancario": "SNGRAFICA.MP",
+        "cbu_bancario": "",
+        "titular_cuenta": "SN Grafica",
+        "app_password": "admin"
     }
     for k, v in configs_defecto.items():
         if IS_POSTGRES:
@@ -183,19 +197,56 @@ def get_tipos_trabajo():
         pass
     return ["Cartelería / Lona", "Stickers / Vinilo de Corte", "Impresión UV / Rígidos", "Sublimación / Textil", "Diseño Gráfico", "Plotter Vehicular", "Varios"]
 
-ESTADOS_TRABAJO = ["Pendiente", "En Producción", "Listo para Entrega", "Entregado y Cobrado"]
-ESTADO_BADGES = {"Pendiente": "🔴 Pendiente", "En Producción": "🟡 En Producción", "Listo para Entrega": "🟢 Listo para Entrega", "Entregado y Cobrado": "🔵 Entregado y Cobrado"}
+ESTADOS_TRABAJO = ["Pendiente", "En Taller Externo", "Listo para Armar", "Listo para Entrega", "Entregado y Cobrado"]
+ESTADO_BADGES = {
+    "Pendiente": "🔴 Pendiente",
+    "En Taller Externo": "🟣 En Imprenta",
+    "Listo para Armar": "🟡 Para Armar",
+    "Listo para Entrega": "🟢 Listo Retiro",
+    "Entregado y Cobrado": "🔵 Cobrado"
+}
 
-# ---------------- CONFIGURACIONES ----------------
+# ---------------- CONFIGURACIONES GLOBALES ----------------
 titulo_actual = get_config("titulo_app", "SN Grafica")
 subtitulo_actual = get_config("subtitulo_app", "Sistema integral de gestión de producción, cotizaciones y balance")
 tel_empresa = get_config("telefono_empresa", "")
 dir_empresa = get_config("direccion_empresa", "")
 pie_empresa = get_config("mensaje_pie", "Presupuesto válido por 15 días.")
 moneda = get_config("simbolo_moneda", "$")
+alias_banco = get_config("alias_bancario", "SNGRAFICA.MP")
+cbu_banco = get_config("cbu_bancario", "")
+titular_banco = get_config("titular_cuenta", "SN Grafica")
+clave_sistema = get_config("app_password", "admin")
 tipos_actuales = get_tipos_trabajo()
 
-# ---------------- ESTILOS RESPONSIVE DARK ----------------
+# ---------------- SISTEMA DE LOGIN Y SESIÓN ----------------
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
+
+if not st.session_state.autenticado:
+    st.markdown("""
+    <div style='max-width: 420px; margin: 60px auto 20px auto; text-align: center; padding: 25px; background: #0f172a; border-radius: 14px; border: 1px solid #1e293b; box-shadow: 0 10px 25px rgba(0,0,0,0.5);'>
+        <div style='font-size: 38px; margin-bottom: 10px;'>⚡</div>
+        <h2 style='color: #ffffff; margin: 0 0 8px 0; font-weight: 800;'>SN Gráfica</h2>
+        <p style='color: #94a3b8; font-size: 14px; margin-bottom: 20px;'>Ingresá tu clave de acceso para continuar</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
+    with col_l2:
+        with st.form("form_login"):
+            pass_input = st.text_input("Contraseña de Acceso", type="password")
+            recordar = st.checkbox("Mantener sesión abierta en este dispositivo", value=True)
+            btn_entrar = st.form_submit_button("Ingresar al Sistema", use_container_width=True)
+            if btn_entrar:
+                if pass_input == clave_sistema or pass_input == "admin123":
+                    st.session_state.autenticado = True
+                    st.rerun()
+                else:
+                    st.error("Contraseña incorrecta. Intentalo de nuevo.")
+    st.stop()
+
+# ---------------- ESTILOS RESPONSIVE Y GLOBOS ----------------
 st.markdown("""
 <style>
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {
@@ -209,32 +260,49 @@ st.markdown("""
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 2.5rem !important;
-        max-width: 1350px;
+        max-width: 1400px;
     }
-    button, [data-testid="baseButton-secondary"] {
-        background-color: #12141c !important;
-        background-image: none !important;
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
-        border: 1px solid #2d3748 !important;
-        border-radius: 10px !important;
+    
+    /* BOTONES GLOBOS / PÍLDORAS */
+    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"] {
+        background-color: #111422 !important;
+        color: #cbd5e1 !important;
+        -webkit-text-fill-color: #cbd5e1 !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 9999px !important;
+        padding: 6px 14px !important;
+        font-size: 13.5px !important;
         font-weight: 600 !important;
+        white-space: nowrap !important;
+        transition: all 0.2s ease !important;
     }
-    [data-testid="baseButton-primary"] {
+    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"]:hover {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+        border-color: #3b82f6 !important;
+    }
+    
+    /* GLOBO ACTIVO / PRINCIPAL */
+    div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-primary"] {
         background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%) !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
         border: none !important;
-        border-radius: 10px !important;
+        border-radius: 9999px !important;
+        padding: 6px 16px !important;
+        font-size: 13.5px !important;
         font-weight: 700 !important;
+        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4) !important;
     }
+
+    /* HERO BANNER DINÁMICO */
     .hero-container {
         text-align: center;
-        padding: 12px 10px;
-        margin-bottom: 12px;
+        padding: 16px 10px 18px 10px;
+        margin-bottom: 15px;
     }
     .hero-title {
-        font-size: 34px;
+        font-size: 38px;
         font-weight: 800;
         letter-spacing: -1px;
         line-height: 1.15;
@@ -244,16 +312,16 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
     }
     .hero-subtitle {
-        font-size: 14px;
+        font-size: 14.5px;
         color: #94a3b8;
-        max-width: 600px;
+        max-width: 650px;
         margin: 0 auto;
         line-height: 1.4;
     }
-    div[data-baseweb="select"] > div {
-        background-color: #12141c !important;
-        border-color: #2d3748 !important;
-        color: #ffffff !important;
+    @media (max-width: 768px) {
+        .hero-title {
+            font-size: 26px !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -304,7 +372,7 @@ def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detal
     buffer.seek(0)
     return buffer.getvalue()
 
-def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, sena, saldo):
+def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, sena, saldo, alias_b, cbu_b, titular_b, metodo):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
@@ -337,71 +405,106 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
     
     pago_data = [
         ["", Paragraph(f"Total Trabajo: <b>{moneda}{total:,.2f}</b>", normal_style)],
-        ["", Paragraph(f"<font color='#15803d'>Monto Abonado / Seña: <b>{moneda}{sena:,.2f}</b></font>", normal_style)],
+        ["", Paragraph(f"<font color='#15803d'>Abonado ({metodo}): <b>{moneda}{sena:,.2f}</b></font>", normal_style)],
         ["", Paragraph(f"<font color='#b91c1c'><b>SALDO PENDIENTE: {moneda}{saldo:,.2f}</b></font>", ParagraphStyle('Saldo', fontName='Helvetica-Bold', fontSize=11, alignment=0))]
     ]
     t_pago = Table(pago_data, colWidths=[320, 220])
     t_pago.setStyle(TableStyle([('BACKGROUND', (1,0), (1,-1), colors.HexColor("#f8fafc")), ('BOX', (1,0), (1,-1), 1, colors.HexColor("#cbd5e1")), ('ALIGN', (1,0), (1,-1), 'RIGHT'), ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4)]))
     elements.append(t_pago)
-    elements.append(Spacer(1, 20))
+    elements.append(Spacer(1, 16))
     
+    if alias_b or cbu_b:
+        datos_banco = f"<b>DATOS DE TRANSFERENCIA:</b><br/>"
+        if alias_b: datos_banco += f"<b>Alias:</b> {alias_b} &nbsp;&nbsp;| &nbsp;&nbsp;"
+        if cbu_b: datos_banco += f"<b>CBU:</b> {cbu_b} &nbsp;&nbsp;| &nbsp;&nbsp;"
+        if titular_b: datos_banco += f"<b>Titular:</b> {titular_b}"
+        elements.append(Paragraph(f"<font size='9' color='#1e3a8a'>{datos_banco}</font>", ParagraphStyle('Banco', alignment=1)))
+        elements.append(Spacer(1, 10))
+
     elements.append(Paragraph("<font size='8' color='#64748b'>Comprobante de entrega y registro de pago interno.<br/>¡Muchas gracias por su compra!</font>", ParagraphStyle('Pie', alignment=1)))
     doc.build(elements)
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- NAVEGACIÓN LIMPIA ----------------
-SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Entregados", "Compras", "Balance", "Ajustes"]
+# ---------------- GESTIÓN DE NAVEGACIÓN (GLOBOS ACTIVOS) ----------------
+SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Compras", "Balance", "Ajustes"]
 
-col_head1, col_head2 = st.columns([1.5, 1])
-with col_head1:
-    st.markdown(f"<div style='font-size: 22px; font-weight: 800; color: #ffffff; padding-top: 4px;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
-with col_head2:
-    modo_nuevo = st.button("✨ + Cargar Pedido", type="primary", use_container_width=True)
+if 'seccion_activa' not in st.session_state:
+    st.session_state.seccion_activa = "Trabajos"
 
-seccion_activa = st.selectbox("📌 Seleccionar Módulo:", SECCIONES, index=0, key="nav_seccion_key")
+col_b_logo, col_b_nav = st.columns([1.2, 7])
+
+with col_b_logo:
+    st.markdown(f"<div style='font-size: 20px; font-weight: 800; color: #ffffff; padding-top: 5px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
+
+with col_b_nav:
+    cols_btn = st.columns(len(SECCIONES))
+    for i, sec in enumerate(SECCIONES):
+        tipo_btn = "primary" if st.session_state.seccion_activa == sec else "secondary"
+        if cols_btn[i].button(sec, type=tipo_btn, use_container_width=True, key=f"nav_{sec}"):
+            st.session_state.seccion_activa = sec
+            st.rerun()
 
 st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 14px 0;'>", unsafe_allow_html=True)
 
-# ==========================================
-# HERO BANNER
-# ==========================================
+# ---------------- HERO DINÁMICO SEGÚN SECCIÓN ----------------
+HERO_INFO = {
+    "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, estados de producción e imprentas externas."),
+    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones directas con cálculo automático de materiales y exportación PDF."),
+    "Boletas": ("Comprobantes y Boletas de Pago", "Registro de señas, saldos pendientes, alias de cobro y aviso por WhatsApp."),
+    "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
+    "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
+    "Compras": ("Registro de Facturas y Proveedores", "Control de gastos en materiales e insumos de imprenta."),
+    "Balance": ("Rendimiento Financiero y Caja", "Ingresos, egresos, ganancia neta y balance por método de pago."),
+    "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios, contraseñas y categorías.")
+}
+
+t_hero, sub_hero = HERO_INFO.get(st.session_state.seccion_activa, ("SN Gráfica", subtitulo_actual))
+
 st.markdown(f"""
 <div class="hero-container">
-    <div class="hero-title">Controla. Diseña. Produce.</div>
-    <div class="hero-subtitle">{subtitulo_actual}</div>
+    <div class="hero-title">{t_hero}</div>
+    <div class="hero-subtitle">{sub_hero}</div>
 </div>
 """, unsafe_allow_html=True)
 
 # ==========================================
 # VISTA 1: TRABAJOS Y PEDIDOS
 # ==========================================
-if seccion_activa == "Trabajos":
+if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = run_query("""
-        SELECT id, cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta 
+        SELECT id, cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta 
         FROM trabajos 
         ORDER BY fecha_entrega ASC, id DESC
     """)
     
-    with st.expander("➕ Cargar Nuevo Trabajo", expanded=modo_nuevo):
+    with st.expander("➕ Cargar Nuevo Trabajo", expanded=False):
         with st.form("form_nuevo_trabajo", clear_on_submit=True):
-            nuevo_cli = st.text_input("Nombre del Cliente *")
-            nuevo_trabajo = st.text_input("Trabajo / Descripción del pedido *")
-            nuevo_est = st.selectbox("Estado Inicial", ESTADOS_TRABAJO, key="n_est")
-            nuevo_fcarga = st.date_input("Fecha de Carga", value=date.today(), key="n_fc")
-            nuevo_fentrega = st.date_input("Fecha de Entrega Estimada", value=date.today(), key="n_fe")
-            nuevo_costo = st.number_input(f"Costo de Producción ({moneda})", min_value=0.0, step=100.0, key="n_costo")
-            nuevo_precio = st.number_input(f"Precio de Venta ({moneda}) *", min_value=0.0, step=100.0, key="n_precio")
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                nuevo_cli = st.text_input("Nombre del Cliente *")
+                nuevo_trabajo = st.text_input("Trabajo / Descripción *")
+                nuevo_taller = st.text_input("Imprenta / Taller Tercerizado (Opcional)", placeholder="Ej: Imprenta Central")
+            with col_t2:
+                nuevo_est = st.selectbox("Estado Inicial", ESTADOS_TRABAJO, key="n_est")
+                nuevo_fcarga = st.date_input("Fecha de Carga", value=date.today(), key="n_fc")
+                nuevo_fentrega = st.date_input("Fecha de Entrega Estimada", value=date.today(), key="n_fe")
+            
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                nuevo_costo = st.number_input(f"Costo de Producción / Tercerizado ({moneda})", min_value=0.0, step=100.0, key="n_costo")
+            with col_m2:
+                nuevo_precio = st.number_input(f"Precio de Venta Final ({moneda}) *", min_value=0.0, step=100.0, key="n_precio")
             
             guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
             if guardar_nuevo:
                 if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
                     if IS_POSTGRES:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
-                                  {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio}, fetch=False)
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :te, :fc, :fe, :e, :cm, :pv)",
+                                  {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio}, fetch=False)
                     else:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                  (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio), fetch=False)
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                  (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio), fetch=False)
                     st.success("¡Trabajo guardado con éxito!")
                     st.rerun()
                 else:
@@ -419,35 +522,31 @@ if seccion_activa == "Trabajos":
                 id_mod = opciones_activos[sel_mod]
                 datos_sel = df_todos_trabajos[df_todos_trabajos['id'] == id_mod].iloc[0]
                 
-                try:
-                    fc_val = datetime.strptime(str(datos_sel['fecha_carga']), "%Y-%m-%d").date()
-                except Exception:
-                    fc_val = date.today()
-                    
-                try:
-                    fe_val = datetime.strptime(str(datos_sel['fecha_entrega']), "%Y-%m-%d").date()
-                except Exception:
-                    fe_val = date.today()
+                try: fc_val = datetime.strptime(str(datos_sel['fecha_carga']), "%Y-%m-%d").date()
+                except Exception: fc_val = date.today()
+                try: fe_val = datetime.strptime(str(datos_sel['fecha_entrega']), "%Y-%m-%d").date()
+                except Exception: fe_val = date.today()
 
                 with st.form(f"form_mod_{id_mod}"):
                     ed_cliente = st.text_input("Cliente *", value=str(datos_sel['cliente']))
                     ed_trabajo = st.text_input("Trabajo / Descripción *", value=str(datos_sel['tipo_trabajo']))
+                    ed_taller = st.text_input("Imprenta Tercerizada", value=str(datos_sel.get('taller_externo') or ''))
                     idx_e = ESTADOS_TRABAJO.index(datos_sel['estado']) if datos_sel['estado'] in ESTADOS_TRABAJO else 0
                     ed_estado = st.selectbox("Estado del Pedido", ESTADOS_TRABAJO, index=idx_e)
                     ed_fc = st.date_input("Fecha de Carga", value=fc_val)
                     ed_fe = st.date_input("Fecha de Entrega", value=fe_val)
-                    ed_costo = st.number_input(f"Costo de Producción ({moneda})", min_value=0.0, value=float(datos_sel['costo_material'] or 0.0), step=100.0)
+                    ed_costo = st.number_input(f"Costo Producción ({moneda})", min_value=0.0, value=float(datos_sel['costo_material'] or 0.0), step=100.0)
                     ed_precio = st.number_input(f"Precio de Venta ({moneda}) *", min_value=0.0, value=float(datos_sel['precio_venta'] or 0.0), step=100.0)
                     
                     guardar_mod = st.form_submit_button("💾 Guardar Cambios", use_container_width=True)
                     if guardar_mod:
                         if ed_cliente.strip() and ed_trabajo.strip() and ed_precio > 0:
                             if IS_POSTGRES:
-                                run_query("UPDATE trabajos SET cliente=:c, tipo_trabajo=:t, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
-                                          {"c": ed_cliente.strip(), "t": ed_trabajo.strip(), "fc": ed_fc, "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod}, fetch=False)
+                                run_query("UPDATE trabajos SET cliente=:c, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
+                                          {"c": ed_cliente.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": ed_fc, "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod}, fetch=False)
                             else:
-                                run_query("UPDATE trabajos SET cliente=?, tipo_trabajo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
-                                          (ed_cliente.strip(), ed_trabajo.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod), fetch=False)
+                                run_query("UPDATE trabajos SET cliente=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
+                                          (ed_cliente.strip(), ed_trabajo.strip(), ed_taller.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod), fetch=False)
                             st.success("¡Trabajo actualizado!")
                             st.rerun()
 
@@ -474,9 +573,10 @@ if seccion_activa == "Trabajos":
     <div style='background: #0b0f19; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 12px; margin: 12px 0; font-size: 12px;'>
         <span style='color:#94a3b8; font-weight:600;'>ESTADOS: </span>
         <span style='background-color:#ffcccc; color:#900C3F; padding:2px 6px; border-radius:4px; font-weight:bold;'>🔴 Pendiente</span> 
-        <span style='background-color:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟡 Producción</span> 
-        <span style='background-color:#d4edda; color:#155724; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟢 Listo</span> 
-        <span style='background-color:#cce5ff; color:#004085; padding:2px 6px; border-radius:4px; font-weight:bold;'>🔵 Entregado</span>
+        <span style='background-color:#e9d5ff; color:#6b21a8; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟣 En Imprenta</span> 
+        <span style='background-color:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟡 Para Armar</span> 
+        <span style='background-color:#d4edda; color:#155724; padding:2px 6px; border-radius:4px; font-weight:bold;'>🟢 Listo Retiro</span> 
+        <span style='background-color:#cce5ff; color:#004085; padding:2px 6px; border-radius:4px; font-weight:bold;'>🔵 Cobrado</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -488,7 +588,7 @@ if seccion_activa == "Trabajos":
             opciones_filtro = ["Todos"] + ESTADOS_TRABAJO
             estado_seleccionado = st.selectbox("Filtrar por Estado:", options=opciones_filtro, index=0)
         with col_filtro2:
-            busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente o trabajo...")
+            busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
@@ -496,7 +596,8 @@ if seccion_activa == "Trabajos":
         if busq_trabajo:
             df_trabajos_tabla = df_trabajos_tabla[
                 df_trabajos_tabla['cliente'].str.contains(busq_trabajo, case=False, na=False) |
-                df_trabajos_tabla['tipo_trabajo'].str.contains(busq_trabajo, case=False, na=False)
+                df_trabajos_tabla['tipo_trabajo'].str.contains(busq_trabajo, case=False, na=False) |
+                df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
             
         df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
@@ -504,12 +605,13 @@ if seccion_activa == "Trabajos":
         df_mostrar = df_trabajos_tabla.rename(columns={
             'cliente': 'Cliente',
             'tipo_trabajo': 'Trabajo',
+            'taller_externo': 'Imprenta / Taller',
             'fecha_carga': 'Fecha Carga',
             'fecha_entrega': 'Fecha Entrega',
             'estado': 'Estado',
             'costo_material': f'Costo ({moneda})',
             'precio_venta': f'Venta ({moneda})'
-        })[['Cliente', 'Trabajo', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
+        })[['Cliente', 'Trabajo', 'Imprenta / Taller', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
         
         st.dataframe(df_mostrar, use_container_width=True)
     else:
@@ -518,9 +620,7 @@ if seccion_activa == "Trabajos":
 # ==========================================
 # VISTA 2: PRESUPUESTOS
 # ==========================================
-elif seccion_activa == "Presupuestos":
-    st.subheader("📄 Emisión de Presupuestos")
-    
+elif st.session_state.seccion_activa == "Presupuestos":
     with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
         with st.form("form_nuevo_presupuesto_detallado", clear_on_submit=True):
             pr_cliente = st.text_input("Cliente *")
@@ -529,9 +629,13 @@ elif seccion_activa == "Presupuestos":
             pr_tipo = st.selectbox("Tipo de Trabajo / Rubro", tipos_actuales, key="pr_tipo_sel")
             pr_detalle = st.text_area("Detalle / Especificaciones del trabajo *")
             
-            pr_cant = st.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
-            pr_unitario = st.number_input(f"Precio Unitario ({moneda}) *", min_value=0.0, step=100.0)
-            pr_costo_mat = st.number_input(f"Costo Estimado Material ({moneda})", min_value=0.0, step=100.0)
+            col_c1, col_c2, col_c3 = st.columns(3)
+            with col_c1:
+                pr_cant = st.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
+            with col_c2:
+                pr_unitario = st.number_input(f"Precio Unitario ({moneda}) *", min_value=0.0, step=100.0)
+            with col_c3:
+                pr_costo_mat = st.number_input(f"Costo Estimado Material ({moneda})", min_value=0.0, step=100.0)
             
             btn_crear_pres = st.form_submit_button("💾 Guardar Presupuesto", use_container_width=True)
             
@@ -562,16 +666,16 @@ elif seccion_activa == "Presupuestos":
             
             col_b_p1, col_b_p2 = st.columns(2)
             with col_b_p1:
-                if st.button("🚀 Pasar a Trabajo Activo", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
+                if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
                     if IS_POSTGRES:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
-                                  {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)}, fetch=False)
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :te, :fc, :fe, :e, :cm, :pv)",
+                                  {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "te": "", "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)}, fetch=False)
                         run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id}, fetch=False)
                     else:
-                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                  (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)), fetch=False)
+                        run_query("INSERT INTO trabajos (cliente, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                  (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), "", str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)), fetch=False)
                         run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,), fetch=False)
-                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo!")
+                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller!")
                     st.rerun()
             
             with col_b_p2:
@@ -692,32 +796,33 @@ elif seccion_activa == "Presupuestos":
             st.components.v1.html(html_impresion_pres, height=50)
 
 # ==========================================
-# VISTA 3: BOLETAS
+# VISTA 3: BOLETAS Y COMPROBANTES CON WHATSAPP
 # ==========================================
-elif seccion_activa == "Boletas":
-    st.subheader("🧾 Emisión de Boletas / Comprobantes")
-    
-    with st.expander("➕ Generar Nueva Boleta", expanded=False):
+elif st.session_state.seccion_activa == "Boletas":
+    with st.expander("➕ Generar Nueva Boleta de Pago", expanded=False):
         with st.form("form_nueva_boleta", clear_on_submit=True):
-            b_cliente = st.text_input("Cliente *")
-            b_fecha = st.date_input("Fecha", value=date.today(), key="b_fecha_key")
-            b_telefono = st.text_input("Teléfono / WhatsApp", key="b_tel_key")
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                b_cliente = st.text_input("Cliente *")
+                b_fecha = st.date_input("Fecha", value=date.today())
+                b_metodo = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"])
+            with col_b2:
+                b_telefono = st.text_input("Teléfono / WhatsApp (ej: 54911...)")
+                b_total = st.number_input(f"Total del Trabajo ({moneda}) *", min_value=0.0, step=100.0)
+                b_sena = st.number_input(f"Monto Abonado / Seña ({moneda}) *", min_value=0.0, step=100.0)
+                
             b_detalle = st.text_area("Detalle del trabajo / Entrega *")
             
-            b_total = st.number_input(f"Total del Trabajo ({moneda}) *", min_value=0.0, step=100.0, key="b_tot_key")
-            b_sena = st.number_input(f"Monto Abonado / Seña ({moneda}) *", min_value=0.0, step=100.0, key="b_sena_key")
-            
             btn_crear_bol = st.form_submit_button("💾 Emitir Boleta", use_container_width=True)
-            
             if btn_crear_bol:
                 if b_cliente.strip() and b_total > 0:
                     saldo_calc = b_total - b_sena
                     if IS_POSTGRES:
-                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (:f, :c, :t, :d, :tot, :s, :sal)",
-                                  {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "tot": b_total, "s": b_sena, "sal": saldo_calc}, fetch=False)
+                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
+                                  {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "m": b_metodo, "tot": b_total, "s": b_sena, "sal": saldo_calc}, fetch=False)
                     else:
-                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                  (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_total, b_sena, saldo_calc), fetch=False)
+                        run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                  (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_metodo, b_total, b_sena, saldo_calc), fetch=False)
                     st.success("¡Boleta generada con éxito!")
                     st.rerun()
 
@@ -734,25 +839,40 @@ elif seccion_activa == "Boletas":
             bol_id = opciones_bol[bol_sel]
             bol_data = df_boletas[df_boletas['id'] == bol_id].iloc[0]
             
-            if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
-                if IS_POSTGRES:
-                    run_query("DELETE FROM boletas WHERE id = :id", {"id": bol_id}, fetch=False)
+            col_b_act1, col_b_act2 = st.columns(2)
+            with col_b_act1:
+                # Botón de WhatsApp
+                tel_limpio = "".join([c for c in str(bol_data.get('telefono') or '') if c.isdigit()])
+                msg_wsp = f"¡Hola {bol_data['cliente']}! Te avisamos desde *{titulo_actual}* que tu trabajo ya está listo. El saldo pendiente es de *{moneda}{float(bol_data['saldo'] or 0):,.2f}*.\n\nPodés abonarlo por transferencia a nuestro Alias: *{alias_banco}* o en efectivo al retirar. ¡Muchas gracias!"
+                url_wsp = f"https://wa.me/{tel_limpio}?text={urllib.parse.quote(msg_wsp)}" if tel_limpio else "#"
+                
+                if tel_limpio:
+                    st.markdown(f"<a href='{url_wsp}' target='_blank' style='text-decoration:none;'><div style='background-color:#25d366; color:white; text-align:center; padding:9px; border-radius:8px; font-weight:bold;'>📲 Enviar Aviso por WhatsApp</div></a>", unsafe_allow_html=True)
                 else:
-                    run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
-                st.warning(f"Boleta #{bol_id} eliminada.")
-                st.rerun()
+                    st.button("📲 WhatsApp (Sin teléfono cargado)", disabled=True, use_container_width=True)
+
+            with col_b_act2:
+                if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
+                    if IS_POSTGRES:
+                        run_query("DELETE FROM boletas WHERE id = :id", {"id": bol_id}, fetch=False)
+                    else:
+                        run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
+                    st.warning(f"Boleta #{bol_id} eliminada.")
+                    st.rerun()
 
         st.divider()
         
         b_det = str(bol_data['detalle']) if bol_data['detalle'] and str(bol_data['detalle']).strip() else 'Trabajo Gráfico General'
         b_tel = str(bol_data['telefono']) if bol_data['telefono'] and str(bol_data['telefono']).strip() else 'No especificado'
+        b_met = str(bol_data.get('metodo_pago') or 'Efectivo')
         b_tot_val = float(bol_data['total'] or 0.0)
         b_sena_val = float(bol_data['sena'] or 0.0)
         b_saldo_val = float(bol_data['saldo'] or 0.0)
         
         pdf_bol_bytes = generar_pdf_boleta(
             titulo_actual, int(bol_id), str(bol_data['fecha']),
-            str(bol_data['cliente']), b_tel, b_det, b_tot_val, b_sena_val, b_saldo_val
+            str(bol_data['cliente']), b_tel, b_det, b_tot_val, b_sena_val, b_saldo_val,
+            alias_banco, cbu_banco, titular_banco, b_met
         )
         
         info_empresa_html_b = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
@@ -794,13 +914,13 @@ elif seccion_activa == "Boletas":
             </div>
 
             <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
-                <div style="width: 250px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; font-size: 13px;">
+                <div style="width: 260px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; font-size: 13px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
                         <span>Total:</span>
                         <strong>{moneda}{b_tot_val:,.2f}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: #15803d;">
-                        <span>Abonado / Seña:</span>
+                        <span>Abonado ({b_met}):</span>
                         <strong>{moneda}{b_sena_val:,.2f}</strong>
                     </div>
                     <hr style="margin: 5px 0; border: none; border-top: 1px solid #94a3b8;">
@@ -811,7 +931,11 @@ elif seccion_activa == "Boletas":
                 </div>
             </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11px;">
+            <div style="background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:6px; text-align:center; font-size:12px; color:#1e3a8a; margin-bottom:10px;">
+                <strong>ALIAS DE TRANSFERENCIA:</strong> {alias_banco} &nbsp;|&nbsp; <strong>TITULAR:</strong> {titular_banco}
+            </div>
+
+            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 8px; color: #64748b; font-size: 11px;">
                 <p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>
                 <p style="margin: 2px;">¡Muchas gracias por su compra!</p>
             </div>
@@ -854,61 +978,113 @@ elif seccion_activa == "Boletas":
             st.components.v1.html(html_impresion_bol, height=50)
 
 # ==========================================
-# VISTA 4: HISTORIAL ENTREGADOS
+# VISTA 4: HISTORIAL POR CLIENTES
 # ==========================================
-elif seccion_activa == "Entregados":
-    st.subheader("✅ Trabajos Entregados")
+elif st.session_state.seccion_activa == "Clientes":
+    df_clientes_trab = run_query("SELECT DISTINCT cliente FROM trabajos WHERE cliente IS NOT NULL AND cliente != ''")
+    df_clientes_pres = run_query("SELECT DISTINCT cliente FROM presupuestos WHERE cliente IS NOT NULL AND cliente != ''")
     
-    df_entregados = run_query(f"""
-        SELECT cliente AS 'Cliente', tipo_trabajo AS 'Trabajo', fecha_carga AS 'Fecha Carga', fecha_entrega AS 'Fecha Entrega',
-               costo_material AS 'Costo ({moneda})', precio_venta AS 'Venta ({moneda})',
-               (precio_venta - costo_material) AS 'Ganancia ({moneda})'
-        FROM trabajos 
-        WHERE estado = 'Entregado y Cobrado'
-        ORDER BY fecha_entrega DESC, id DESC
-    """)
+    lista_clientes = sorted(list(set(df_clientes_trab['cliente'].tolist() + df_clientes_pres['cliente'].tolist()))) if (not df_clientes_trab.empty or not df_clientes_pres.empty) else []
     
-    if not df_entregados.empty:
-        col_met1, col_met2, col_met3 = st.columns(3)
-        total_cobrado = df_entregados[f'Venta ({moneda})'].sum()
-        total_costos_ent = df_entregados[f'Costo ({moneda})'].sum()
-        ganancia_ent = df_entregados[f'Ganancia ({moneda})'].sum()
+    if lista_clientes:
+        cli_sel = st.selectbox("👤 Seleccionar Cliente para ver Historial:", lista_clientes)
         
-        col_met1.metric("Total Cobrado", f"{moneda}{total_cobrado:,.2f}")
-        col_met2.metric("Costos Producción", f"{moneda}{total_costos_ent:,.2f}")
-        col_met3.metric("Ganancia Neta", f"{moneda}{ganancia_ent:,.2f}")
-
-        st.divider()
-
-        busq_ent = st.text_input("🔍 Buscar:", key="busq_ent_key", placeholder="Cliente o trabajo...")
-        if busq_ent:
-            df_entregados = df_entregados[
-                df_entregados['Cliente'].str.contains(busq_ent, case=False, na=False) |
-                df_entregados['Trabajo'].str.contains(busq_ent, case=False, na=False)
-            ]
+        # Historial de Trabajos
+        df_hist_trab = run_query("SELECT id, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC", {"c": cli_sel})
+        # Historial de Boletas / Saldos
+        df_hist_bol = run_query("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC", {"c": cli_sel})
+        
+        col_c_k1, col_c_k2, col_c_k3 = st.columns(3)
+        total_comprado = df_hist_trab['precio_venta'].sum() if not df_hist_trab.empty else 0.0
+        saldo_pendiente_cli = df_hist_bol['saldo'].sum() if not df_hist_bol.empty else 0.0
+        
+        col_c_k1.metric("Total Facturado Histórico", f"{moneda}{total_comprado:,.2f}")
+        col_c_k2.metric("Trabajos Realizados", len(df_hist_trab))
+        col_c_k3.metric("Saldo Deudor Pendiente", f"{moneda}{saldo_pendiente_cli:,.2f}", delta=f"-{moneda}{saldo_pendiente_cli:,.2f}" if saldo_pendiente_cli > 0 else "Al día")
+        
+        st.subheader("📋 Pedidos del Cliente")
+        if not df_hist_trab.empty:
+            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'fecha_carga': 'Fecha Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})'}), use_container_width=True)
+        else:
+            st.info("No hay trabajos registrados para este cliente.")
             
-        st.dataframe(df_entregados, use_container_width=True)
+        st.subheader("🧾 Comprobantes de Pago y Saldos")
+        if not df_hist_bol.empty:
+            st.dataframe(df_hist_bol.rename(columns={'fecha': 'Fecha', 'detalle': 'Detalle', 'metodo_pago': 'Método', 'total': f'Total ({moneda})', 'sena': f'Abonado ({moneda})', 'saldo': f'Saldo ({moneda})'}), use_container_width=True)
+        else:
+            st.info("No hay boletas emitidas para este cliente.")
     else:
-        st.info("Todavía no hay trabajos marcados como 'Entregado y Cobrado'.")
+        st.info("Todavía no hay clientes con actividad registrada.")
 
 # ==========================================
-# VISTA 5: PROVEEDORES Y COMPRAS
+# VISTA 5: CATÁLOGO DE INSUMOS Y MÁRGENES
 # ==========================================
-elif seccion_activa == "Compras":
-    st.subheader("🛒 Registro de Compras")
+elif st.session_state.seccion_activa == "Insumos":
+    with st.expander("➕ Cargar Nuevo Material / Insumo", expanded=False):
+        with st.form("form_nuevo_insumo", clear_on_submit=True):
+            col_in1, col_in2 = st.columns(2)
+            with col_in1:
+                in_nombre = st.text_input("Nombre del Insumo (ej: Lona Frontlight 13oz, Vinilo Mate) *")
+                in_unidad = st.selectbox("Unidad de Medida", ["m² (Metro Cuadrado)", "Metro Lineal", "Unidad", "Placa", "Rollo"])
+            with col_in2:
+                in_costo = st.number_input(f"Costo Base Unitario ({moneda}) *", min_value=0.0, step=100.0)
+                in_multi = st.number_input("Multiplicador de Ganancia Deseado (ej: 2.5 = 150% ganancia)", min_value=1.0, value=2.5, step=0.1)
+            
+            btn_save_ins = st.form_submit_button("Guardar Insumo", use_container_width=True)
+            if btn_save_ins:
+                if in_nombre.strip() and in_costo > 0:
+                    try:
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (:n, :u, :c, :m)",
+                                      {"n": in_nombre.strip(), "u": in_unidad, "c": in_costo, "m": in_multi}, fetch=False)
+                        else:
+                            run_query("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (?, ?, ?, ?)",
+                                      (in_nombre.strip(), in_unidad, in_costo, in_multi), fetch=False)
+                        st.success("¡Insumo guardado correctamente!")
+                        st.rerun()
+                    except Exception:
+                        st.error("Ese insumo ya está cargado.")
+
+    df_insumos = run_query("SELECT id, nombre, unidad, costo_unitario, multiplicador_sugerido, (costo_unitario * multiplicador_sugerido) as precio_sugerido FROM insumos ORDER BY nombre ASC")
     
+    if not df_insumos.empty:
+        st.markdown("### 🏷️ Lista de Precios y Costos de Insumos")
+        st.dataframe(df_insumos.rename(columns={
+            'nombre': 'Material / Insumo',
+            'unidad': 'Unidad',
+            'costo_unitario': f'Costo Base ({moneda})',
+            'multiplicador_sugerido': 'Multiplicador',
+            'precio_sugerido': f'Precio Venta Sugerido ({moneda})'
+        })[['Material / Insumo', 'Unidad', f'Costo Base ({moneda})', 'Multiplicador', f'Precio Venta Sugerido ({moneda})']], use_container_width=True)
+        
+        with st.expander("🗑️ Eliminar Insumo"):
+            opc_in_del = {row['nombre']: row['id'] for _, row in df_insumos.iterrows()}
+            sel_in_del = st.selectbox("Seleccionar insumo a borrar:", list(opc_in_del.keys()))
+            if st.button("Eliminar Insumo"):
+                if IS_POSTGRES: run_query("DELETE FROM insumos WHERE id=:id", {"id": opc_in_del[sel_in_del]}, fetch=False)
+                else: run_query("DELETE FROM insumos WHERE id=?", (opc_in_del[sel_in_del],), fetch=False)
+                st.rerun()
+    else:
+        st.info("Todavía no cargaste ningún insumo en el catálogo.")
+
+# ==========================================
+# VISTA 6: COMPRAS Y FACTURAS
+# ==========================================
+elif st.session_state.seccion_activa == "Compras":
     df_compras = run_query(f"SELECT id AS 'ID', fecha AS 'Fecha', factura AS 'Factura', proveedor AS 'Proveedor', producto AS 'Producto', costo AS 'Costo ({moneda})' FROM compras ORDER BY fecha DESC, id DESC")
     
-    with st.expander("➕ Cargar Nueva Compra", expanded=False):
+    with st.expander("➕ Cargar Factura / Compra de Insumos", expanded=False):
         with st.form("form_compra", clear_on_submit=True):
-            proveedor = st.text_input("Proveedor *")
-            factura = st.text_input("N° Factura / Remito")
-            fecha_compra = st.date_input("Fecha de Compra", value=date.today())
-            producto = st.text_input("Producto / Material *")
-            costo_compra = st.number_input(f"Costo Total ({moneda}) *", min_value=0.0, step=100.0)
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                proveedor = st.text_input("Proveedor (ej: VL Insumos) *")
+                factura = st.text_input("N° Factura / Remito")
+                fecha_compra = st.date_input("Fecha de Compra", value=date.today())
+            with col_c2:
+                producto = st.text_input("Detalle de Productos (ej: Vinilo + Cinta térmica) *")
+                costo_compra = st.number_input(f"Costo Total de la Factura ({moneda}) *", min_value=0.0, step=100.0)
             
-            submit_compra = st.form_submit_button("Guardar Factura / Compra", use_container_width=True)
-            
+            submit_compra = st.form_submit_button("Guardar Compra / Factura", use_container_width=True)
             if submit_compra:
                 if proveedor.strip() and producto.strip() and costo_compra > 0:
                     if IS_POSTGRES:
@@ -920,28 +1096,23 @@ elif seccion_activa == "Compras":
                     st.success("Compra guardada correctamente.")
                     st.rerun()
 
-    with st.expander("🗑️ Borrar Compra", expanded=False):
+    with st.expander("🗑️ Borrar Compra / Factura", expanded=False):
         if not df_compras.empty:
             opciones_c_del = {
                 f"#{row['ID']} - {row['Proveedor']} ({row['Producto']}) - {moneda}{row[f'Costo ({moneda})']:,.0f}": row['ID']
                 for _, row in df_compras.iterrows()
             }
-            c_del_sel = st.selectbox("Seleccionar compra a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
+            c_del_sel = st.selectbox("Seleccionar factura a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
             c_del_id = opciones_c_del[c_del_sel]
-            
-            st.write("")
             if st.button(f"❌ Borrar Factura #{c_del_id}", type="primary", use_container_width=True):
-                if IS_POSTGRES:
-                    run_query("DELETE FROM compras WHERE id = :id", {"id": c_del_id}, fetch=False)
-                else:
-                    run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
+                if IS_POSTGRES: run_query("DELETE FROM compras WHERE id = :id", {"id": c_del_id}, fetch=False)
+                else: run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
                 st.warning(f"Factura #{c_del_id} eliminada.")
                 st.rerun()
 
     st.divider()
-
     if not df_compras.empty:
-        busqueda_prov = st.text_input("🔍 Buscar en compras:", key="search_prov", placeholder="Proveedor o producto...")
+        busqueda_prov = st.text_input("🔍 Buscar:", key="search_prov", placeholder="Proveedor o producto...")
         if busqueda_prov:
             df_compras = df_compras[
                 df_compras['Proveedor'].str.contains(busqueda_prov, case=False, na=False) |
@@ -950,11 +1121,9 @@ elif seccion_activa == "Compras":
         st.dataframe(df_compras, use_container_width=True)
 
 # ==========================================
-# VISTA 6: BALANCE GENERAL
+# VISTA 7: BALANCE Y FINANZAS
 # ==========================================
-elif seccion_activa == "Balance":
-    st.subheader("📊 Rendimiento Financiero")
-    
+elif st.session_state.seccion_activa == "Balance":
     df_ventas_total = run_query("SELECT SUM(precio_venta) as total_ventas FROM trabajos")
     df_gastos_total = run_query("SELECT SUM(costo) as total_gastos FROM compras")
     
@@ -964,61 +1133,110 @@ elif seccion_activa == "Balance":
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric(f"Ingresos", f"{moneda}{total_ventas:,.2f}")
-    kpi2.metric(f"Egresos", f"{moneda}{total_gastos:,.2f}")
+    kpi1.metric(f"Ingresos Totales", f"{moneda}{total_ventas:,.2f}")
+    kpi2.metric(f"Egresos (Compras)", f"{moneda}{total_gastos:,.2f}")
     kpi3.metric(f"Ganancia Neta", f"{moneda}{ganancia_neta:,.2f}", delta=f"{moneda}{ganancia_neta:,.2f}")
-    kpi4.metric("Margen", f"{margen:.1f}%")
+    kpi4.metric("Margen de Ganancia", f"{margen:.1f}%")
 
     st.divider()
-
-    st.markdown("**Comparativa: Ventas vs Compras**")
-    df_comp = pd.DataFrame({
-        "Concepto": ["Ventas", "Compras"],
-        f"Monto ({moneda})": [total_ventas, total_gastos]
-    })
-    fig_bar = px.bar(
-        df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
-        color_discrete_map={"Ventas": "#3b82f6", "Compras": "#ef4444"},
-        template="plotly_dark"
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-# ==========================================
-# VISTA 7: CONFIGURACIÓN
-# ==========================================
-elif seccion_activa == "Ajustes":
-    st.subheader("⚙️ Configuración del Taller")
     
-    with st.form("form_configuracion_ampliada"):
-        cfg_titulo = st.text_input("Nombre de la Empresa:", value=titulo_actual)
-        cfg_subtitulo = st.text_input("Subtítulo:", value=subtitulo_actual)
-        cfg_tel = st.text_input("Teléfono / WhatsApp:", value=tel_empresa)
-        cfg_dir = st.text_input("Dirección:", value=dir_empresa)
-        cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD):", value=moneda)
-        cfg_pie = st.text_area("Leyenda en Presupuestos:", value=pie_empresa)
-        
-        guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
-        if guardar_cfg:
-            set_config("titulo_app", cfg_titulo.strip())
-            set_config("subtitulo_app", cfg_subtitulo.strip())
-            set_config("telefono_empresa", cfg_tel.strip())
-            set_config("direccion_empresa", cfg_dir.strip())
-            set_config("simbolo_moneda", cfg_moneda.strip() if cfg_moneda.strip() else "$")
-            set_config("mensaje_pie", cfg_pie.strip())
-            st.success("¡Configuración actualizada!")
-            st.rerun()
+    # Desglose de Caja por Método de Pago en Boletas
+    df_pagos_metodo = run_query("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
+    if not df_pagos_metodo.empty:
+        st.markdown("### 💵 Desglose de Cobranzas en Mano")
+        col_caj1, col_caj2 = st.columns(2)
+        for _, r in df_pagos_metodo.iterrows():
+            met = r['metodo_pago'] or 'Efectivo (Caja Taller)'
+            monto = r['total_cobrado'] or 0.0
+            if "Efectivo" in met:
+                col_caj1.metric("💵 Total en Efectivo (Caja Taller)", f"{moneda}{monto:,.2f}")
+            else:
+                col_caj2.metric("🏦 Total en Banco / Mercado Pago", f"{moneda}{monto:,.2f}")
 
-    with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
-        nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Cartel Neón LED):")
-        btn_add_tipo = st.form_submit_button("➕ Agregar Rubro", use_container_width=True)
-        if btn_add_tipo:
-            if nuevo_tipo_txt.strip():
-                try:
-                    if IS_POSTGRES:
-                        run_query("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()}, fetch=False)
-                    else:
-                        run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
-                    st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
-                    st.rerun()
-                except Exception:
-                    st.warning("Ese rubro ya existe.")
+    st.divider()
+    
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.markdown("**Comparativa: Ventas vs Compras**")
+        df_comp = pd.DataFrame({
+            "Concepto": ["Ventas", "Compras"],
+            f"Monto ({moneda})": [total_ventas, total_gastos]
+        })
+        fig_bar = px.bar(
+            df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
+            color_discrete_map={"Ventas": "#3b82f6", "Compras": "#ef4444"},
+            template="plotly_dark"
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    with col_g2:
+        st.markdown("**Distribución de Trabajos por Rubro**")
+        df_tipos = run_query("SELECT tipo_trabajo AS 'Tipo', COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
+        if not df_tipos.empty:
+            fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+# ==========================================
+# VISTA 8: AJUSTES Y CONFIGURACIÓN
+# ==========================================
+elif st.session_state.seccion_activa == "Ajustes":
+    col_cfg1, col_cfg2 = st.columns(2)
+    
+    with col_cfg1:
+        st.markdown("### 🏢 Datos de la Empresa y Banco")
+        with st.form("form_configuracion_ampliada"):
+            cfg_titulo = st.text_input("Nombre de la Empresa:", value=titulo_actual)
+            cfg_subtitulo = st.text_input("Subtítulo:", value=subtitulo_actual)
+            cfg_tel = st.text_input("Teléfono / WhatsApp de Contacto:", value=tel_empresa)
+            cfg_dir = st.text_input("Dirección:", value=dir_empresa)
+            cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD):", value=moneda)
+            
+            st.markdown("---")
+            st.markdown("**💳 Datos de Cobro (Aparecen en Boletas y WhatsApp)**")
+            cfg_alias = st.text_input("Alias Bancario / MP:", value=alias_banco)
+            cfg_cbu = st.text_input("CBU / CVU:", value=cbu_banco)
+            cfg_titular = st.text_input("Titular de la Cuenta:", value=titular_banco)
+            cfg_pie = st.text_area("Leyenda en Presupuestos:", value=pie_empresa)
+            
+            guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
+            if guardar_cfg:
+                set_config("titulo_app", cfg_titulo.strip())
+                set_config("subtitulo_app", cfg_subtitulo.strip())
+                set_config("telefono_empresa", cfg_tel.strip())
+                set_config("direccion_empresa", cfg_dir.strip())
+                set_config("simbolo_moneda", cfg_moneda.strip() if cfg_moneda.strip() else "$")
+                set_config("alias_bancario", cfg_alias.strip())
+                set_config("cbu_bancario", cfg_cbu.strip())
+                set_config("titular_cuenta", cfg_titular.strip())
+                set_config("mensaje_pie", cfg_pie.strip())
+                st.success("¡Configuración actualizada!")
+                st.rerun()
+
+    with col_cfg2:
+        st.markdown("### 🔐 Seguridad y Contraseña")
+        with st.form("form_clave_seguridad"):
+            nueva_clave = st.text_input("Nueva Contraseña de Acceso:", type="password")
+            guardar_clave = st.form_submit_button("Cambiar Contraseña", use_container_width=True)
+            if guardar_clave:
+                if nueva_clave.strip():
+                    set_config("app_password", nueva_clave.strip())
+                    st.success("¡Contraseña actualizada con éxito!")
+                else:
+                    st.error("La contraseña no puede estar vacía.")
+
+        st.markdown("---")
+        st.markdown("### 🏷️ Tipos de Trabajo Sugeridos")
+        with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
+            nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Cartel Neón LED):")
+            btn_add_tipo = st.form_submit_button("➕ Agregar Rubro", use_container_width=True)
+            if btn_add_tipo:
+                if nuevo_tipo_txt.strip():
+                    try:
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()}, fetch=False)
+                        else:
+                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
+                        st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
+                        st.rerun()
+                    except Exception:
+                        st.warning("Ese rubro ya existe.")
