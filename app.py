@@ -1045,5 +1045,3 @@ elif st.session_state.seccion_activa == "Configuracion":
                     st.rerun()
                 except Exception:
                     st.warning("Ese rubro ya existe.")
-                    except Exception:
-                        st.warning("Ese rubro ya existe.")
