@@ -8,88 +8,117 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from sqlalchemy import create_engine, text
 
 # ---------------- CONFIGURACIÓN DE PÁGINA ----------------
 st.set_page_config(
     page_title="Gestion Grafica SN Grafica",
     page_icon="⚡",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-DB_NAME = "grafica.db"
+# ---------------- CONEXIÓN A BASE DE DATOS (NUBE O LOCAL) ----------------
+DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else None
+
+if DB_URL:
+    if DB_URL.startswith("postgres://"):
+        DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(DB_URL)
+    IS_POSTGRES = True
+else:
+    DB_NAME = "grafica.db"
+    IS_POSTGRES = False
+
+def run_query(query, params=(), fetch=True):
+    if IS_POSTGRES:
+        with engine.connect() as conn:
+            if fetch:
+                df = pd.read_sql_query(text(query), conn, params=dict(enumerate(params)) if isinstance(params, (list, tuple)) else params)
+                return df
+            else:
+                conn.execute(text(query), dict(enumerate(params)) if isinstance(params, (list, tuple)) else params)
+                conn.commit()
+    else:
+        conn = sqlite3.connect(DB_NAME)
+        if fetch:
+            df = pd.read_sql_query(query, conn, params=params)
+            conn.close()
+            return df
+        else:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+            conn.close()
 
 # ---------------- BASE DE DATOS E INICIALIZACIÓN ----------------
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS compras (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            factura TEXT,
-            proveedor TEXT,
-            fecha DATE,
-            producto TEXT,
-            costo REAL
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trabajos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha_carga DATE,
-            fecha_entrega DATE,
-            cliente TEXT,
-            tipo_trabajo TEXT,
-            estado TEXT,
-            costo_material REAL,
-            precio_venta REAL
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS presupuestos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha DATE,
-            cliente TEXT,
-            telefono TEXT,
-            tipo_trabajo TEXT,
-            detalle TEXT,
-            cantidad REAL,
-            precio_unitario REAL,
-            precio_total REAL,
-            costo_material REAL,
-            estado TEXT
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS boletas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha DATE,
-            cliente TEXT,
-            telefono TEXT,
-            detalle TEXT,
-            total REAL,
-            sena REAL,
-            saldo REAL
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS configuracion (
-            clave TEXT PRIMARY KEY,
-            valor TEXT
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tipos_trabajo (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre TEXT UNIQUE
-        )
-    """)
-    
+    if IS_POSTGRES:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS compras (
+                    id SERIAL PRIMARY KEY,
+                    factura TEXT,
+                    proveedor TEXT,
+                    fecha DATE,
+                    producto TEXT,
+                    costo REAL
+                );
+                CREATE TABLE IF NOT EXISTS trabajos (
+                    id SERIAL PRIMARY KEY,
+                    fecha_carga DATE,
+                    fecha_entrega DATE,
+                    cliente TEXT,
+                    tipo_trabajo TEXT,
+                    estado TEXT,
+                    costo_material REAL,
+                    precio_venta REAL
+                );
+                CREATE TABLE IF NOT EXISTS presupuestos (
+                    id SERIAL PRIMARY KEY,
+                    fecha DATE,
+                    cliente TEXT,
+                    telefono TEXT,
+                    tipo_trabajo TEXT,
+                    detalle TEXT,
+                    cantidad REAL,
+                    precio_unitario REAL,
+                    precio_total REAL,
+                    costo_material REAL,
+                    estado TEXT
+                );
+                CREATE TABLE IF NOT EXISTS boletas (
+                    id SERIAL PRIMARY KEY,
+                    fecha DATE,
+                    cliente TEXT,
+                    telefono TEXT,
+                    detalle TEXT,
+                    total REAL,
+                    sena REAL,
+                    saldo REAL
+                );
+                CREATE TABLE IF NOT EXISTS configuracion (
+                    clave TEXT PRIMARY KEY,
+                    valor TEXT
+                );
+                CREATE TABLE IF NOT EXISTS tipos_trabajo (
+                    id SERIAL PRIMARY KEY,
+                    nombre TEXT UNIQUE
+                );
+            """))
+            conn.commit()
+    else:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("CREATE TABLE IF NOT EXISTS compras (id INTEGER PRIMARY KEY AUTOINCREMENT, factura TEXT, proveedor TEXT, fecha DATE, producto TEXT, costo REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, fecha_entrega DATE, cliente TEXT, tipo_trabajo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS presupuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, detalle TEXT, cantidad REAL, precio_unitario REAL, precio_total REAL, costo_material REAL, estado TEXT)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS boletas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, detalle TEXT, total REAL, sena REAL, saldo REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS tipos_trabajo (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE)")
+        conn.commit()
+        conn.close()
+
     configs_defecto = {
         "titulo_app": "SN Grafica",
         "subtitulo_app": "Sistema integral de gestión de producción, cotizaciones y balance",
@@ -99,46 +128,40 @@ def init_db():
         "simbolo_moneda": "$"
     }
     for k, v in configs_defecto.items():
-        cursor.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v))
+        if IS_POSTGRES:
+            with engine.connect() as conn:
+                conn.execute(text("INSERT INTO configuracion (clave, valor) VALUES (:k, :v) ON CONFLICT (clave) DO NOTHING"), {"k": k, "v": v})
+                conn.commit()
+        else:
+            run_query("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v), fetch=False)
     
-    tipos_base = [
-        "Cartelería / Lona",
-        "Stickers / Vinilo de Corte",
-        "Impresión UV / Rígidos",
-        "Sublimación / Textil",
-        "Diseño Gráfico",
-        "Plotter Vehicular",
-        "Varios"
-    ]
+    tipos_base = ["Cartelería / Lona", "Stickers / Vinilo de Corte", "Impresión UV / Rígidos", "Sublimación / Textil", "Diseño Gráfico", "Plotter Vehicular", "Varios"]
     for tipo in tipos_base:
-        cursor.execute("INSERT OR IGNORE INTO tipos_trabajo (nombre) VALUES (?)", (tipo,))
-        
-    conn.commit()
-    conn.close()
+        if IS_POSTGRES:
+            with engine.connect() as conn:
+                conn.execute(text("INSERT INTO tipos_trabajo (nombre) VALUES (:n) ON CONFLICT (nombre) DO NOTHING"), {"n": tipo})
+                conn.commit()
+        else:
+            run_query("INSERT OR IGNORE INTO tipos_trabajo (nombre) VALUES (?)", (tipo,), fetch=False)
 
 init_db()
 
-# ---------------- FUNCIONES CRUD ----------------
-def run_query(query, params=(), fetch=True):
-    conn = sqlite3.connect(DB_NAME)
-    if fetch:
-        df = pd.read_sql_query(query, conn, params=params)
-        conn.close()
-        return df
-    else:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
-        conn.commit()
-        conn.close()
-
 def get_config(clave, default=""):
-    df = run_query("SELECT valor FROM configuracion WHERE clave = ?", (clave,))
+    if IS_POSTGRES:
+        df = run_query("SELECT valor FROM configuracion WHERE clave = :c", {"c": clave})
+    else:
+        df = run_query("SELECT valor FROM configuracion WHERE clave = ?", (clave,))
     if not df.empty:
         return df['valor'].iloc[0]
     return default
 
 def set_config(clave, valor):
-    run_query("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (clave, valor), fetch=False)
+    if IS_POSTGRES:
+        with engine.connect() as conn:
+            conn.execute(text("INSERT INTO configuracion (clave, valor) VALUES (:c, :v) ON CONFLICT (clave) DO UPDATE SET valor = :v"), {"c": clave, "v": valor})
+            conn.commit()
+    else:
+        run_query("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (clave, valor), fetch=False)
 
 def get_tipos_trabajo():
     df = run_query("SELECT nombre FROM tipos_trabajo ORDER BY nombre ASC")
@@ -146,19 +169,8 @@ def get_tipos_trabajo():
         return df['nombre'].tolist()
     return ["General"]
 
-ESTADOS_TRABAJO = [
-    "Pendiente",
-    "En Producción",
-    "Listo para Entrega",
-    "Entregado y Cobrado"
-]
-
-ESTADO_BADGES = {
-    "Pendiente": "🔴 Pendiente",
-    "En Producción": "🟡 En Producción",
-    "Listo para Entrega": "🟢 Listo para Entrega",
-    "Entregado y Cobrado": "🔵 Entregado y Cobrado"
-}
+ESTADOS_TRABAJO = ["Pendiente", "En Producción", "Listo para Entrega", "Entregado y Cobrado"]
+ESTADO_BADGES = {"Pendiente": "🔴 Pendiente", "En Producción": "🟡 En Producción", "Listo para Entrega": "🟢 Listo para Entrega", "Entregado y Cobrado": "🔵 Entregado y Cobrado"}
 
 # ---------------- CONFIGURACIONES ----------------
 titulo_actual = get_config("titulo_app", "SN Grafica")
@@ -169,28 +181,28 @@ pie_empresa = get_config("mensaje_pie", "Presupuesto válido por 15 días.")
 moneda = get_config("simbolo_moneda", "$")
 tipos_actuales = get_tipos_trabajo()
 
-# ---------------- ESTILOS CSS ESTILO PROVISUAL / MODERN SAAS ----------------
+# ---------------- ESTILOS CSS RESPONSIVE (PC + IPHONE / MOBILE) ----------------
 st.markdown(f"""
 <style>
-    /* Ocultar barra default de Streamlit */
+    /* Ocultar barra superior y decoraciones por defecto */
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {{
         display: none !important;
     }}
     
-    /* Fondo oscuro profundo general */
+    /* Fondo general Dark */
     .stApp {{
         background-color: #050508;
         color: #f8fafc;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
     }}
 
     .block-container {{
-        padding-top: 1.5rem !important;
-        padding-bottom: 3rem !important;
+        padding-top: 1rem !important;
+        padding-bottom: 2.5rem !important;
         max-width: 1350px;
     }}
 
-    /* Botones de navegación superior: Forzar una sola línea (nowrap) y estilo píldora */
+    /* Botones de navegación tipo píldora */
     div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"] {{
         background-color: #12141c !important;
         color: #cbd5e1 !important;
@@ -200,8 +212,6 @@ st.markdown(f"""
         font-size: 13px !important;
         font-weight: 500 !important;
         white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
         transition: all 0.2s ease !important;
     }}
     div[data-testid="stHorizontalBlock"] button[data-testid="baseButton-secondary"]:hover {{
@@ -223,28 +233,58 @@ st.markdown(f"""
         box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35) !important;
     }}
 
-    /* Hero Banner moderno con Gradiente de Texto */
+    /* Hero Banner Moderno */
     .hero-container {{
         text-align: center;
-        padding: 35px 20px 25px 20px;
-        margin-bottom: 25px;
+        padding: 25px 15px 20px 15px;
+        margin-bottom: 20px;
     }}
     .hero-title {{
-        font-size: 48px;
+        font-size: 46px;
         font-weight: 800;
-        letter-spacing: -1.5px;
+        letter-spacing: -1.2px;
         line-height: 1.15;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
         background: linear-gradient(90deg, #fef08a 0%, #60a5fa 50%, #818cf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }}
     .hero-subtitle {{
-        font-size: 17px;
+        font-size: 16px;
         color: #94a3b8;
         max-width: 650px;
         margin: 0 auto;
-        line-height: 1.5;
+        line-height: 1.4;
+    }}
+
+    /* REGLAS RESPONSIVE PARA IPHONE / CELULARES (Pantallas <= 768px) */
+    @media (max-width: 768px) {{
+        .block-container {{
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+            padding-top: 0.8rem !important;
+        }}
+        .hero-title {{
+            font-size: 28px !important;
+            letter-spacing: -0.5px !important;
+        }}
+        .hero-subtitle {{
+            font-size: 13.5px !important;
+        }}
+        .hero-container {{
+            padding: 12px 5px 15px 5px !important;
+            margin-bottom: 12px !important;
+        }}
+        /* Botones táctiles cómodos en móvil */
+        div[data-testid="stHorizontalBlock"] button {{
+            padding: 8px 10px !important;
+            font-size: 12px !important;
+        }}
+        /* Evitar desbordes en tablas */
+        div[data-testid="stDataFrame"] {{
+            width: 100% !important;
+            overflow-x: auto !important;
+        }}
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -254,22 +294,15 @@ def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detal
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
-    
+    styles = getSampleStyleSheet()
     title_style = ParagraphStyle(name='TitleStyle', fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=colors.HexColor("#1e3a8a"))
     sub_style = ParagraphStyle(name='SubStyle', fontName='Helvetica', fontSize=11, leading=14, textColor=colors.HexColor("#475569"))
     bold_style = ParagraphStyle(name='BoldStyle', fontName='Helvetica-Bold', fontSize=10, leading=13)
     normal_style = ParagraphStyle(name='NormalStyle', fontName='Helvetica', fontSize=10, leading=13)
     
-    header_data = [
-        [Paragraph(f"<b>{empresa}</b>", title_style), Paragraph(f"<b>PRESUPUESTO #{p_id:04d}</b><br/>Fecha: {fecha}", sub_style)]
-    ]
+    header_data = [[Paragraph(f"<b>{empresa}</b>", title_style), Paragraph(f"<b>PRESUPUESTO #{p_id:04d}</b><br/>Fecha: {fecha}", sub_style)]]
     t_header = Table(header_data, colWidths=[320, 220])
-    t_header.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('ALIGN', (1,0), (1,0), 'RIGHT'),
-        ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor("#1e3a8a")),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8)
-    ]))
+    t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (1,0), (1,0), 'RIGHT'), ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor("#1e3a8a")), ('BOTTOMPADDING', (0,0), (-1,-1), 8)]))
     elements.append(t_header)
     elements.append(Spacer(1, 14))
     
@@ -278,13 +311,7 @@ def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detal
         [Paragraph("<b>Tipo de Trabajo:</b>", bold_style), Paragraph(str(tipo), normal_style), Paragraph("", normal_style), Paragraph("", normal_style)]
     ]
     t_client = Table(client_data, colWidths=[90, 200, 70, 180])
-    t_client.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f8fafc")),
-        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
-        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-    ]))
+    t_client.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f8fafc")), ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")), ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5)]))
     elements.append(t_client)
     elements.append(Spacer(1, 14))
     
@@ -293,35 +320,17 @@ def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detal
         [Paragraph(str(detalle), normal_style), Paragraph(f"{cant:,.0f}", normal_style), Paragraph(f"{moneda}{unitario:,.2f}", normal_style), Paragraph(f"{moneda}{total:,.2f}", bold_style)]
     ]
     t_items = Table(items_data, colWidths=[280, 60, 100, 100])
-    t_items.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e3a8a")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
-        ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-    ]))
+    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e3a8a")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'CENTER'), ('ALIGN', (2,0), (-1,-1), 'RIGHT'), ('ALIGN', (3,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     elements.append(t_items)
     elements.append(Spacer(1, 14))
     
-    total_data = [
-        ["", Paragraph(f"<b>TOTAL: {moneda}{total:,.2f}</b>", ParagraphStyle('Tot', fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"), alignment=2))]
-    ]
+    total_data = [["", Paragraph(f"<b>TOTAL: {moneda}{total:,.2f}</b>", ParagraphStyle('Tot', fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"), alignment=2))]]
     t_tot = Table(total_data, colWidths=[340, 200])
-    t_tot.setStyle(TableStyle([
-        ('BACKGROUND', (1,0), (1,0), colors.HexColor("#f1f5f9")),
-        ('BOX', (1,0), (1,0), 1, colors.HexColor("#1e3a8a")),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-    ]))
+    t_tot.setStyle(TableStyle([('BACKGROUND', (1,0), (1,0), colors.HexColor("#f1f5f9")), ('BOX', (1,0), (1,0), 1, colors.HexColor("#1e3a8a")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     elements.append(t_tot)
     elements.append(Spacer(1, 20))
     
-    pie_txt = Paragraph(f"<font size='8' color='#64748b'>{pie_txt_custom}<br/>¡Gracias por consultarnos!</font>", ParagraphStyle('Pie', alignment=1))
-    elements.append(pie_txt)
-    
+    elements.append(Paragraph(f"<font size='8' color='#64748b'>{pie_txt_custom}<br/>¡Gracias por consultarnos!</font>", ParagraphStyle('Pie', alignment=1)))
     doc.build(elements)
     buffer.seek(0)
     return buffer.getvalue()
@@ -330,35 +339,21 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
-    
+    styles = getSampleStyleSheet()
     title_style = ParagraphStyle(name='TitleStyle', fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=colors.HexColor("#15803d"))
     sub_style = ParagraphStyle(name='SubStyle', fontName='Helvetica', fontSize=11, leading=14, textColor=colors.HexColor("#475569"))
     bold_style = ParagraphStyle(name='BoldStyle', fontName='Helvetica-Bold', fontSize=10, leading=13)
     normal_style = ParagraphStyle(name='NormalStyle', fontName='Helvetica', fontSize=10, leading=13)
     
-    header_data = [
-        [Paragraph(f"<b>{empresa}</b>", title_style), Paragraph(f"<b>BOLETA DE PAGO #{b_id:04d}</b><br/>Fecha: {fecha}", sub_style)]
-    ]
+    header_data = [[Paragraph(f"<b>{empresa}</b>", title_style), Paragraph(f"<b>BOLETA DE PAGO #{b_id:04d}</b><br/>Fecha: {fecha}", sub_style)]]
     t_header = Table(header_data, colWidths=[320, 220])
-    t_header.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('ALIGN', (1,0), (1,0), 'RIGHT'),
-        ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor("#15803d")),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8)
-    ]))
+    t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (1,0), (1,0), 'RIGHT'), ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor("#15803d")), ('BOTTOMPADDING', (0,0), (-1,-1), 8)]))
     elements.append(t_header)
     elements.append(Spacer(1, 14))
     
-    client_data = [
-        [Paragraph("<b>Cliente:</b>", bold_style), Paragraph(str(cliente), normal_style), Paragraph("<b>Teléfono:</b>", bold_style), Paragraph(str(telefono), normal_style)]
-    ]
+    client_data = [[Paragraph("<b>Cliente:</b>", bold_style), Paragraph(str(cliente), normal_style), Paragraph("<b>Teléfono:</b>", bold_style), Paragraph(str(telefono), normal_style)]]
     t_client = Table(client_data, colWidths=[90, 200, 70, 180])
-    t_client.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f0fdf4")),
-        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#86efac")),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-    ]))
+    t_client.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f0fdf4")), ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#86efac")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     elements.append(t_client)
     elements.append(Spacer(1, 14))
     
@@ -367,14 +362,7 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
         [Paragraph(str(detalle), normal_style), Paragraph(f"{moneda}{total:,.2f}", bold_style)]
     ]
     t_items = Table(items_data, colWidths=[400, 140])
-    t_items.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#15803d")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (1,0), (-1,-1), 'RIGHT'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-    ]))
+    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#15803d")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     elements.append(t_items)
     elements.append(Spacer(1, 14))
     
@@ -384,34 +372,26 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
         ["", Paragraph(f"<font color='#b91c1c'><b>SALDO PENDIENTE: {moneda}{saldo:,.2f}</b></font>", ParagraphStyle('Saldo', fontName='Helvetica-Bold', fontSize=11, alignment=0))]
     ]
     t_pago = Table(pago_data, colWidths=[320, 220])
-    t_pago.setStyle(TableStyle([
-        ('BACKGROUND', (1,0), (1,-1), colors.HexColor("#f8fafc")),
-        ('BOX', (1,0), (1,-1), 1, colors.HexColor("#cbd5e1")),
-        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
+    t_pago.setStyle(TableStyle([('BACKGROUND', (1,0), (1,-1), colors.HexColor("#f8fafc")), ('BOX', (1,0), (1,-1), 1, colors.HexColor("#cbd5e1")), ('ALIGN', (1,0), (1,-1), 'RIGHT'), ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4)]))
     elements.append(t_pago)
     elements.append(Spacer(1, 20))
     
-    pie_txt = Paragraph("<font size='8' color='#64748b'>Comprobante de entrega y registro de pago interno.<br/>¡Muchas gracias por su compra!</font>", ParagraphStyle('Pie', alignment=1))
-    elements.append(pie_txt)
-    
+    elements.append(Paragraph("<font size='8' color='#64748b'>Comprobante de entrega y registro de pago interno.<br/>¡Muchas gracias por su compra!</font>", ParagraphStyle('Pie', alignment=1)))
     doc.build(elements)
     buffer.seek(0)
     return buffer.getvalue()
 
-# ---------------- ESTADO DE NAVEGACIÓN ACTIVA ----------------
+# ---------------- ESTADO DE NAVEGACIÓN ----------------
 if 'seccion_activa' not in st.session_state:
     st.session_state.seccion_activa = "Trabajos"
 
 # ==========================================
-# HEADER / NAVBAR ESTILO SAAS
+# HEADER / NAVBAR ESTILO SAAS RESPONSIVE
 # ==========================================
 col_brand, col_nav, col_cta = st.columns([1.5, 6.2, 1.0])
 
 with col_brand:
-    st.markdown(f"<div style='font-size: 18px; font-weight: 800; color: #ffffff; padding-top: 6px; white-space: nowrap;'>ⓟ {titulo_actual}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 18px; font-weight: 800; color: #ffffff; padding-top: 6px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
 
 with col_nav:
     n1, n2, n3, n4, n5, n6, n7 = st.columns([1, 1.35, 1, 1.25, 1, 1, 1])
@@ -467,13 +447,12 @@ if st.session_state.seccion_activa == "Trabajos":
                 guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
                 if guardar_nuevo:
                     if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
-                        run_query(
-                            """INSERT INTO trabajos 
-                            (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                            (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio),
-                            fetch=False
-                        )
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
+                                      {"c": nuevo_cli.strip(), "t": nuevo_trabajo.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio}, fetch=False)
+                        else:
+                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                      (nuevo_cli.strip(), nuevo_trabajo.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio), fetch=False)
                         st.session_state.abrir_nuevo = False
                         st.success("¡Trabajo guardado con éxito!")
                         st.rerun()
@@ -514,13 +493,12 @@ if st.session_state.seccion_activa == "Trabajos":
                     guardar_mod = st.form_submit_button("💾 Guardar Cambios", use_container_width=True)
                     if guardar_mod:
                         if ed_cliente.strip() and ed_trabajo.strip() and ed_precio > 0:
-                            run_query(
-                                """UPDATE trabajos 
-                                   SET cliente=?, tipo_trabajo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=?
-                                   WHERE id=?""",
-                                (ed_cliente.strip(), ed_trabajo.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod),
-                                fetch=False
-                            )
+                            if IS_POSTGRES:
+                                run_query("UPDATE trabajos SET cliente=:c, tipo_trabajo=:t, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
+                                          {"c": ed_cliente.strip(), "t": ed_trabajo.strip(), "fc": ed_fc, "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod}, fetch=False)
+                            else:
+                                run_query("UPDATE trabajos SET cliente=?, tipo_trabajo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
+                                          (ed_cliente.strip(), ed_trabajo.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod), fetch=False)
                             st.success("¡Trabajo actualizado!")
                             st.rerun()
 
@@ -536,7 +514,10 @@ if st.session_state.seccion_activa == "Trabajos":
                 
                 st.write("")
                 if st.button(f"❌ Confirmar y Borrar #{id_borrar}", type="primary", use_container_width=True):
-                    run_query("DELETE FROM trabajos WHERE id=?", (id_borrar,), fetch=False)
+                    if IS_POSTGRES:
+                        run_query("DELETE FROM trabajos WHERE id=:id", {"id": id_borrar}, fetch=False)
+                    else:
+                        run_query("DELETE FROM trabajos WHERE id=?", (id_borrar,), fetch=False)
                     st.warning(f"Trabajo #{id_borrar} eliminado.")
                     st.rerun()
 
@@ -619,13 +600,12 @@ elif st.session_state.seccion_activa == "Presupuestos":
                 if btn_crear_pres:
                     total_calculado = pr_cant * pr_unitario
                     if pr_cliente.strip() and pr_unitario > 0:
-                        run_query(
-                            """INSERT INTO presupuestos 
-                            (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"),
-                            fetch=False
-                        )
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
+                                      {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": pr_detalle.strip(), "cant": pr_cant, "pu": pr_unitario, "pt": total_calculado, "cm": pr_costo_mat, "e": "Pendiente"}, fetch=False)
+                        else:
+                            run_query("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                      (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"), fetch=False)
                         st.success("¡Presupuesto guardado!")
                         st.rerun()
 
@@ -646,20 +626,23 @@ elif st.session_state.seccion_activa == "Presupuestos":
                 col_b_p1, col_b_p2 = st.columns(2)
                 with col_b_p1:
                     if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
-                        run_query(
-                            """INSERT INTO trabajos 
-                            (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                            (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)),
-                            fetch=False
-                        )
-                        run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,), fetch=False)
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :t, :fc, :fe, :e, :cm, :pv)",
+                                      {"c": str(pres_data['cliente']), "t": str(pres_data['tipo_trabajo']), "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)}, fetch=False)
+                            run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id}, fetch=False)
+                        else:
+                            run_query("INSERT INTO trabajos (cliente, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                      (str(pres_data['cliente']), str(pres_data['tipo_trabajo']), str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)), fetch=False)
+                            run_query("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,), fetch=False)
                         st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller!")
                         st.rerun()
                 
                 with col_b_p2:
                     if st.button("🗑️ Borrar Presupuesto", use_container_width=True, key=f"btn_del_pres_{pres_id}"):
-                        run_query("DELETE FROM presupuestos WHERE id = ?", (pres_id,), fetch=False)
+                        if IS_POSTGRES:
+                            run_query("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id}, fetch=False)
+                        else:
+                            run_query("DELETE FROM presupuestos WHERE id = ?", (pres_id,), fetch=False)
                         st.warning(f"Presupuesto #{pres_id} eliminado.")
                         st.rerun()
 
@@ -680,54 +663,56 @@ elif st.session_state.seccion_activa == "Presupuestos":
         info_empresa_html = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
         
         presupuesto_html = f"""
-        <div style="border: 2px solid #333; border-radius: 8px; padding: 25px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <div style="border: 2px solid #333; border-radius: 8px; padding: 20px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
             <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 15px;">
                 <div>
-                    <h2 style="margin: 0; color: #1e3a8a;">{titulo_actual}</h2>
+                    <h2 style="margin: 0; color: #1e3a8a; font-size: 20px;">{titulo_actual}</h2>
                     {info_empresa_html}
-                    <h3 style="margin: 3px 0; color: #555; font-size: 15px; font-weight: normal;">PRESUPUESTO ESTIMADO</h3>
+                    <h3 style="margin: 3px 0; color: #555; font-size: 14px; font-weight: normal;">PRESUPUESTO ESTIMADO</h3>
                 </div>
                 <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #333;">N° #{int(pres_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 14px; color: #666;">Fecha: {pres_data['fecha']}</p>
+                    <h3 style="margin: 0; color: #333; font-size: 16px;">N° #{int(pres_id):04d}</h3>
+                    <p style="margin: 3px 0; font-size: 13px; color: #666;">Fecha: {pres_data['fecha']}</p>
                 </div>
             </div>
             
-            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
-                <p style="margin: 4px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
-                <p style="margin: 4px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
-                <p style="margin: 4px 0;"><strong>Rubro / Tipo:</strong> {pres_data['tipo_trabajo']}</p>
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; margin-bottom: 15px; font-size: 13.5px;">
+                <p style="margin: 3px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
+                <p style="margin: 3px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
+                <p style="margin: 3px 0;"><strong>Rubro / Tipo:</strong> {pres_data['tipo_trabajo']}</p>
             </div>
 
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <thead>
-                    <tr style="background-color: #1e3a8a; color: #ffffff;">
-                        <th style="padding: 10px; text-align: left;">Detalle del Trabajo</th>
-                        <th style="padding: 10px; text-align: center; width: 80px;">Cant.</th>
-                        <th style="padding: 10px; text-align: right; width: 140px;">Precio Unitario</th>
-                        <th style="padding: 10px; text-align: right; width: 140px;">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr style="border-bottom: 1px solid #ddd;">
-                        <td style="padding: 12px; font-size: 14px;">{pr_det}</td>
-                        <td style="padding: 12px; text-align: center; font-size: 14px;">{pr_cant_val:,.0f}</td>
-                        <td style="padding: 12px; text-align: right; font-size: 14px;">{moneda}{pr_unit_val:,.2f}</td>
-                        <td style="padding: 12px; text-align: right; font-size: 14px; font-weight: bold;">{moneda}{pr_tot_val:,.2f}</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13.5px;">
+                    <thead>
+                        <tr style="background-color: #1e3a8a; color: #ffffff;">
+                            <th style="padding: 8px; text-align: left;">Detalle del Trabajo</th>
+                            <th style="padding: 8px; text-align: center; width: 60px;">Cant.</th>
+                            <th style="padding: 8px; text-align: right; width: 110px;">P. Unit.</th>
+                            <th style="padding: 8px; text-align: right; width: 110px;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 10px 8px;">{pr_det}</td>
+                            <td style="padding: 10px 8px; text-align: center;">{pr_cant_val:,.0f}</td>
+                            <td style="padding: 10px 8px; text-align: right;">{moneda}{pr_unit_val:,.2f}</td>
+                            <td style="padding: 10px 8px; text-align: right; font-weight: bold;">{moneda}{pr_tot_val:,.2f}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
-                <div style="width: 280px; background-color: #f1f5f9; padding: 12px; border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 18px; color: #1e3a8a;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+                <div style="width: 250px; background-color: #f1f5f9; padding: 10px; border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 16px; color: #1e3a8a;">
                         <strong>TOTAL:</strong>
                         <strong>{moneda}{pr_tot_val:,.2f}</strong>
                     </div>
                 </div>
             </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 12px; color: #64748b; font-size: 12px;">
+            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11.5px;">
                 <p style="margin: 2px;">{pie_empresa}</p>
                 <p style="margin: 2px;">¡Gracias por consultarnos!</p>
             </div>
@@ -800,12 +785,12 @@ elif st.session_state.seccion_activa == "Boletas":
                 if btn_crear_bol:
                     if b_cliente.strip() and b_total > 0:
                         saldo_calc = b_total - b_sena
-                        run_query(
-                            """INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                            (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_total, b_sena, saldo_calc),
-                            fetch=False
-                        )
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (:f, :c, :t, :d, :tot, :s, :sal)",
+                                      {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "tot": b_total, "s": b_sena, "sal": saldo_calc}, fetch=False)
+                        else:
+                            run_query("INSERT INTO boletas (fecha, cliente, telefono, detalle, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                      (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_total, b_sena, saldo_calc), fetch=False)
                         st.success("¡Boleta generada con éxito!")
                         st.rerun()
 
@@ -824,7 +809,10 @@ elif st.session_state.seccion_activa == "Boletas":
                 bol_data = df_boletas[df_boletas['id'] == bol_id].iloc[0]
                 
                 if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
-                    run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
+                    if IS_POSTGRES:
+                        run_query("DELETE FROM boletas WHERE id = :id", {"id": bol_id}, fetch=False)
+                    else:
+                        run_query("DELETE FROM boletas WHERE id = ?", (bol_id,), fetch=False)
                     st.warning(f"Boleta #{bol_id} eliminada.")
                     st.rerun()
 
@@ -844,58 +832,60 @@ elif st.session_state.seccion_activa == "Boletas":
         info_empresa_html_b = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
         
         boleta_html_doc = f"""
-        <div style="border: 2px solid #15803d; border-radius: 8px; padding: 25px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <div style="border: 2px solid #15803d; border-radius: 8px; padding: 20px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
             <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 10px; margin-bottom: 15px;">
                 <div>
-                    <h2 style="margin: 0; color: #15803d;">{titulo_actual}</h2>
+                    <h2 style="margin: 0; color: #15803d; font-size: 20px;">{titulo_actual}</h2>
                     {info_empresa_html_b}
-                    <h3 style="margin: 3px 0; color: #333; font-size: 15px;">BOLETA / COMPROBANTE DE PAGO</h3>
+                    <h3 style="margin: 3px 0; color: #333; font-size: 14px;">BOLETA / COMPROBANTE DE PAGO</h3>
                 </div>
                 <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #15803d;">BOLETA N° #{int(bol_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 14px; color: #666;">Fecha: {bol_data['fecha']}</p>
+                    <h3 style="margin: 0; color: #15803d; font-size: 16px;">BOLETA N° #{int(bol_id):04d}</h3>
+                    <p style="margin: 3px 0; font-size: 13px; color: #666;">Fecha: {bol_data['fecha']}</p>
                 </div>
             </div>
             
-            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin-bottom: 20px;">
-                <p style="margin: 4px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
-                <p style="margin: 4px 0;"><strong>Teléfono:</strong> {b_tel}</p>
+            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px; margin-bottom: 15px; font-size: 13.5px;">
+                <p style="margin: 3px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
+                <p style="margin: 3px 0;"><strong>Teléfono:</strong> {b_tel}</p>
             </div>
 
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                <thead>
-                    <tr style="background-color: #15803d; color: #ffffff;">
-                        <th style="padding: 10px; text-align: left;">Detalle del Trabajo Entregado / Encargado</th>
-                        <th style="padding: 10px; text-align: right; width: 150px;">Importe</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr style="border-bottom: 1px solid #ddd;">
-                        <td style="padding: 12px; font-size: 14px;">{b_det}</td>
-                        <td style="padding: 12px; text-align: right; font-size: 14px; font-weight: bold;">{moneda}{b_tot_val:,.2f}</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13.5px;">
+                    <thead>
+                        <tr style="background-color: #15803d; color: #ffffff;">
+                            <th style="padding: 8px; text-align: left;">Detalle del Trabajo</th>
+                            <th style="padding: 8px; text-align: right; width: 130px;">Importe</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <td style="padding: 10px 8px;">{b_det}</td>
+                            <td style="padding: 10px 8px; text-align: right; font-weight: bold;">{moneda}{b_tot_val:,.2f}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
-                <div style="width: 300px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 12px; border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+                <div style="width: 270px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-size: 13.5px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                         <span>Total del Trabajo:</span>
                         <strong>{moneda}{b_tot_val:,.2f}</strong>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; color: #15803d;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #15803d;">
                         <span>Monto Abonado / Seña:</span>
                         <strong>{moneda}{b_sena_val:,.2f}</strong>
                     </div>
-                    <hr style="margin: 8px 0; border: none; border-top: 1px solid #94a3b8;">
-                    <div style="display: flex; justify-content: space-between; font-size: 16px; color: #b91c1c;">
+                    <hr style="margin: 6px 0; border: none; border-top: 1px solid #94a3b8;">
+                    <div style="display: flex; justify-content: space-between; font-size: 15px; color: #b91c1c;">
                         <strong>Saldo Pendiente:</strong>
                         <strong>{moneda}{b_saldo_val:,.2f}</strong>
                     </div>
                 </div>
             </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 12px; color: #64748b; font-size: 12px;">
+            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11.5px;">
                 <p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>
                 <p style="margin: 2px;">¡Muchas gracias por su compra!</p>
             </div>
@@ -1002,11 +992,12 @@ elif st.session_state.seccion_activa == "Compras":
                 
                 if submit_compra:
                     if proveedor.strip() and producto.strip() and costo_compra > 0:
-                        run_query(
-                            "INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
-                            (factura, proveedor, fecha_compra, producto, costo_compra),
-                            fetch=False
-                        )
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (:f, :p, :fe, :pr, :c)",
+                                      {"f": factura, "p": proveedor, "fe": fecha_compra, "pr": producto, "c": costo_compra}, fetch=False)
+                        else:
+                            run_query("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
+                                      (factura, proveedor, fecha_compra, producto, costo_compra), fetch=False)
                         st.success("Compra guardada correctamente.")
                         st.rerun()
 
@@ -1022,7 +1013,10 @@ elif st.session_state.seccion_activa == "Compras":
                 
                 st.write("")
                 if st.button(f"❌ Borrar Factura #{c_del_id}", type="primary", use_container_width=True):
-                    run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
+                    if IS_POSTGRES:
+                        run_query("DELETE FROM compras WHERE id = :id", {"id": c_del_id}, fetch=False)
+                    else:
+                        run_query("DELETE FROM compras WHERE id = ?", (c_del_id,), fetch=False)
                     st.warning(f"Factura #{c_del_id} eliminada.")
                     st.rerun()
 
@@ -1117,8 +1111,14 @@ elif st.session_state.seccion_activa == "Configuracion":
             if btn_add_tipo:
                 if nuevo_tipo_txt.strip():
                     try:
-                        run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
+                        if IS_POSTGRES:
+                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()}, fetch=False)
+                        else:
+                            run_query("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),), fetch=False)
                         st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
+                        st.rerun()
+                    except Exception:
+                        st.warning("Ese rubro ya existe.")
                         st.rerun()
                     except Exception:
                         st.warning("Ese rubro ya existe.")
