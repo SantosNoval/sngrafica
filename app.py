@@ -79,6 +79,8 @@ def init_db_tables():
                     proveedor TEXT,
                     fecha DATE,
                     producto TEXT,
+                    cantidad REAL DEFAULT 1,
+                    precio_unitario REAL DEFAULT 0,
                     costo REAL
                 );
                 CREATE TABLE IF NOT EXISTS trabajos (
@@ -139,11 +141,15 @@ def init_db_tables():
             except Exception: pass
             try: conn.execute(text("ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;"))
             except Exception: pass
+            try: conn.execute(text("ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;"))
+            except Exception: pass
+            try: conn.execute(text("ALTER TABLE compras ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;"))
+            except Exception: pass
             conn.commit()
     else:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS compras (id INTEGER PRIMARY KEY AUTOINCREMENT, factura TEXT, proveedor TEXT, fecha DATE, producto TEXT, costo REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS compras (id INTEGER PRIMARY KEY AUTOINCREMENT, factura TEXT, proveedor TEXT, fecha DATE, producto TEXT, cantidad REAL DEFAULT 1, precio_unitario REAL DEFAULT 0, costo REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, fecha_entrega DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, taller_externo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS presupuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, detalle TEXT, cantidad REAL, precio_unitario REAL, precio_total REAL, costo_material REAL, estado TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS boletas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, detalle TEXT, metodo_pago TEXT, total REAL, sena REAL, saldo REAL)")
@@ -155,6 +161,10 @@ def init_db_tables():
         try: cursor.execute("ALTER TABLE trabajos ADD COLUMN taller_externo TEXT")
         except Exception: pass
         try: cursor.execute("ALTER TABLE boletas ADD COLUMN metodo_pago TEXT")
+        except Exception: pass
+        try: cursor.execute("ALTER TABLE compras ADD COLUMN cantidad REAL DEFAULT 1")
+        except Exception: pass
+        try: cursor.execute("ALTER TABLE compras ADD COLUMN precio_unitario REAL DEFAULT 0")
         except Exception: pass
         conn.commit()
         conn.close()
@@ -439,8 +449,8 @@ HERO_INFO = {
     "Boletas": ("Comprobantes y Boletas de Pago", "Registro de señas, saldos pendientes, alias de cobro y aviso por WhatsApp."),
     "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
     "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
-    "Compras": ("Registro de Facturas y Proveedores", "Control de gastos en materiales e insumos de imprenta."),
-    "Balance": ("Rendimiento Financiero y Caja", "Ingresos, egresos, ganancia neta y balance por método de pago."),
+    "Compras": ("Registro de Facturas y Proveedores", "Control de gastos en materiales e insumos de imprenta renglón por renglón."),
+    "Balance": ("Rendimiento Financiero y Caja", "Ingresos, egresos (costos de producción + compras) y balance neto."),
     "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios, mensajes de WhatsApp y categorías.")
 }
 
@@ -616,7 +626,7 @@ if st.session_state.seccion_activa == "Trabajos":
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
 # ==========================================
-# VISTA 2: PRESUPUESTOS
+# VISTA 2: PRESUPUESTOS (CON VISTA PREVIA VISUAL)
 # ==========================================
 elif st.session_state.seccion_activa == "Presupuestos":
     with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
@@ -699,67 +709,63 @@ elif st.session_state.seccion_activa == "Presupuestos":
             pr_det, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
         )
         
-        info_empresa_html = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
-        
-        presupuesto_html = f"""
-        <div style="border: 2px solid #333; border-radius: 8px; padding: 16px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; margin-bottom: 12px;">
-                <div>
-                    <h2 style="margin: 0; color: #1e3a8a; font-size: 19px;">{titulo_actual}</h2>
-                    {info_empresa_html}
-                    <h3 style="margin: 3px 0; color: #555; font-size: 13px; font-weight: normal;">PRESUPUESTO ESTIMADO</h3>
+        # Renderizado Visual Limpio sin código crudo
+        st.markdown("### 👁️ Vista Previa del Presupuesto")
+        with st.container():
+            st.markdown(f"""
+            <div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 16px;">
+                    <div>
+                        <h2 style="margin: 0; color: #1e3a8a; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>
+                        <p style="margin: 3px 0; font-size: 13px; color: #475569;">{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>
+                        <span style="font-size: 12px; font-weight: bold; color: #2563eb; background-color: #eff6ff; padding: 3px 8px; border-radius: 4px;">PRESUPUESTO ESTIMADO</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <h3 style="margin: 0; color: #1e293b; font-size: 17px; font-weight: 800;">N° #{int(pres_id):04d}</h3>
+                        <p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {pres_data['fecha']}</p>
+                    </div>
                 </div>
-                <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #333; font-size: 15px;">N° #{int(pres_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {pres_data['fecha']}</p>
-                </div>
-            </div>
-            
-            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px;">
-                <p style="margin: 2px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
-                <p style="margin: 2px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
-                <p style="margin: 2px 0;"><strong>Rubro / Tipo:</strong> {pres_data['tipo_trabajo']}</p>
-            </div>
 
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px;">
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">
+                    <p style="margin: 3px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
+                    <p style="margin: 3px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
+                    <p style="margin: 3px 0;"><strong>Rubro / Categoría:</strong> {pres_data['tipo_trabajo']}</p>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">
                     <thead>
                         <tr style="background-color: #1e3a8a; color: #ffffff;">
-                            <th style="padding: 7px; text-align: left;">Detalle del Trabajo</th>
-                            <th style="padding: 7px; text-align: center; width: 55px;">Cant.</th>
-                            <th style="padding: 7px; text-align: right; width: 100px;">P. Unit.</th>
-                            <th style="padding: 7px; text-align: right; width: 100px;">Total</th>
+                            <th style="padding: 10px; text-align: left; border-top-left-radius: 6px;">Detalle del Trabajo</th>
+                            <th style="padding: 10px; text-align: center; width: 60px;">Cant.</th>
+                            <th style="padding: 10px; text-align: right; width: 110px;">P. Unitario</th>
+                            <th style="padding: 10px; text-align: right; width: 110px; border-top-right-radius: 6px;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr style="border-bottom: 1px solid #ddd;">
-                            <td style="padding: 9px 7px;">{pr_det}</td>
-                            <td style="padding: 9px 7px; text-align: center;">{pr_cant_val:,.0f}</td>
-                            <td style="padding: 9px 7px; text-align: right;">{moneda}{pr_unit_val:,.2f}</td>
-                            <td style="padding: 9px 7px; text-align: right; font-weight: bold;">{moneda}{pr_tot_val:,.2f}</td>
+                        <tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
+                            <td style="padding: 12px 10px; color: #334155;">{pr_det}</td>
+                            <td style="padding: 12px 10px; text-align: center; color: #334155;">{pr_cant_val:,.0f}</td>
+                            <td style="padding: 12px 10px; text-align: right; color: #334155;">{moneda}{pr_unit_val:,.2f}</td>
+                            <td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</td>
                         </tr>
                     </tbody>
                 </table>
-            </div>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
-                <div style="width: 240px; background-color: #f1f5f9; padding: 8px 12px; border-radius: 6px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 15px; color: #1e3a8a;">
-                        <strong>TOTAL:</strong>
-                        <strong>{moneda}{pr_tot_val:,.2f}</strong>
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
+                    <div style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; min-width: 220px; text-align: right;">
+                        <span style="font-size: 13px; color: #64748b;">TOTAL PRESUPUESTO:</span><br/>
+                        <strong style="font-size: 18px; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</strong>
                     </div>
                 </div>
-            </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 10px; color: #64748b; font-size: 11px;">
-                <p style="margin: 2px;">{pie_empresa}</p>
-                <p style="margin: 2px;">¡Gracias por consultarnos!</p>
+                <div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 12px; color: #64748b; font-size: 11.5px;">
+                    <p style="margin: 2px;">{pie_empresa}</p>
+                    <p style="margin: 2px;">¡Muchas gracias por su consulta!</p>
+                </div>
             </div>
-        </div>
-        """
-        st.markdown(presupuesto_html, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+            
         st.write("")
-        
         col_btn_p_down, col_btn_p_imp = st.columns(2)
         with col_btn_p_down:
             st.download_button(
@@ -771,13 +777,31 @@ elif st.session_state.seccion_activa == "Presupuestos":
             )
             
         with col_btn_p_imp:
+            html_content_escaped = f"""
+            <div style='background-color: #ffffff; color: #111827; padding: 24px; font-family: Arial, sans-serif;'>
+                <div style='display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;'>
+                    <div><h2 style='color:#1e3a8a; margin:0;'>{titulo_actual}</h2><p style='color:#666; font-size:12px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p></div>
+                    <div style='text-align:right;'><h3 style='margin:0;'>N° #{int(pres_id):04d}</h3><p style='color:#666;'>Fecha: {pres_data['fecha']}</p></div>
+                </div>
+                <div style='background:#f8fafc; padding:10px; margin:15px 0; border:1px solid #ddd;'>
+                    <p style='margin:3px 0;'><strong>Cliente:</strong> {pres_data['cliente']}</p>
+                    <p style='margin:3px 0;'><strong>Teléfono:</strong> {pr_tel}</p>
+                    <p style='margin:3px 0;'><strong>Rubro:</strong> {pres_data['tipo_trabajo']}</p>
+                </div>
+                <table style='width:100%; border-collapse:collapse; margin-bottom:15px;'>
+                    <tr style='background:#1e3a8a; color:white;'><th style='padding:8px; text-align:left;'>Detalle</th><th style='padding:8px; text-align:center;'>Cant.</th><th style='padding:8px; text-align:right;'>P. Unit.</th><th style='padding:8px; text-align:right;'>Total</th></tr>
+                    <tr style='border-bottom:1px solid #ddd;'><td style='padding:8px;'>{pr_det}</td><td style='padding:8px; text-align:center;'>{pr_cant_val:,.0f}</td><td style='padding:8px; text-align:right;'>{moneda}{pr_unit_val:,.2f}</td><td style='padding:8px; text-align:right; font-weight:bold;'>{moneda}{pr_tot_val:,.2f}</td></tr>
+                </table>
+                <div style='text-align:right; font-size:16px; font-weight:bold; color:#1e3a8a; margin-bottom:15px;'>TOTAL: {moneda}{pr_tot_val:,.2f}</div>
+                <div style='text-align:center; font-size:11px; color:#888; border-top:1px dashed #ccc; padding-top:8px;'><p>{pie_empresa}</p></div>
+            </div>
+            """
             html_impresion_pres = f"""
             <script>
             function imprimirPresupuesto() {{
-                var contenido = `{presupuesto_html}`;
                 var ventana = window.open('', '', 'height=700,width=900');
                 ventana.document.write('<html><head><title>Presupuesto #{pres_id}</title></head><body style="margin: 20px;">');
-                ventana.document.write(contenido);
+                ventana.document.write(`{html_content_escaped}`);
                 ventana.document.write('</body></html>');
                 ventana.document.close();
                 ventana.focus();
@@ -872,73 +896,69 @@ elif st.session_state.seccion_activa == "Boletas":
             alias_banco, cbu_banco, titular_banco, b_met
         )
         
-        info_empresa_html_b = f"<p style='margin:2px 0; color:#64748b; font-size:13px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>" if (dir_empresa or tel_empresa) else ""
-        
-        boleta_html_doc = f"""
-        <div style="border: 2px solid #15803d; border-radius: 8px; padding: 16px; background: #ffffff; color: #111111; font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 8px; margin-bottom: 12px;">
+        st.markdown("### 👁️ Vista Previa del Comprobante")
+        st.markdown(f"""
+        <div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 12px; margin-bottom: 16px;">
                 <div>
-                    <h2 style="margin: 0; color: #15803d; font-size: 19px;">{titulo_actual}</h2>
-                    {info_empresa_html_b}
-                    <h3 style="margin: 3px 0; color: #333; font-size: 13px;">BOLETA / COMPROBANTE DE PAGO</h3>
+                    <h2 style="margin: 0; color: #15803d; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>
+                    <p style="margin: 3px 0; font-size: 13px; color: #475569;">{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>
+                    <span style="font-size: 12px; font-weight: bold; color: #15803d; background-color: #f0fdf4; padding: 3px 8px; border-radius: 4px;">BOLETA / COMPROBANTE DE PAGO</span>
                 </div>
                 <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #15803d; font-size: 15px;">BOLETA N° #{int(bol_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {bol_data['fecha']}</p>
+                    <h3 style="margin: 0; color: #15803d; font-size: 17px; font-weight: 800;">BOLETA N° #{int(bol_id):04d}</h3>
+                    <p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {bol_data['fecha']}</p>
                 </div>
             </div>
             
-            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px;">
-                <p style="margin: 2px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
-                <p style="margin: 2px 0;"><strong>Teléfono:</strong> {b_tel}</p>
+            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">
+                <p style="margin: 3px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
+                <p style="margin: 3px 0;"><strong>Teléfono:</strong> {b_tel}</p>
             </div>
 
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px;">
-                    <thead>
-                        <tr style="background-color: #15803d; color: #ffffff;">
-                            <th style="padding: 7px; text-align: left;">Detalle del Trabajo</th>
-                            <th style="padding: 7px; text-align: right; width: 120px;">Importe</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr style="border-bottom: 1px solid #ddd;">
-                            <td style="padding: 9px 7px;">{b_det}</td>
-                            <td style="padding: 9px 7px; text-align: right; font-weight: bold;">{moneda}{b_tot_val:,.2f}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">
+                <thead>
+                    <tr style="background-color: #15803d; color: #ffffff;">
+                        <th style="padding: 10px; text-align: left; border-top-left-radius: 6px;">Detalle del Trabajo</th>
+                        <th style="padding: 10px; text-align: right; width: 130px; border-top-right-radius: 6px;">Importe</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
+                        <td style="padding: 12px 10px; color: #334155;">{b_det}</td>
+                        <td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #15803d;">{moneda}{b_tot_val:,.2f}</td>
+                    </tr>
+                </tbody>
+            </table>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
-                <div style="width: 260px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; font-size: 13px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
+                <div style="width: 270px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
                         <span>Total:</span>
                         <strong>{moneda}{b_tot_val:,.2f}</strong>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 3px; color: #15803d;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #15803d;">
                         <span>Abonado ({b_met}):</span>
                         <strong>{moneda}{b_sena_val:,.2f}</strong>
                     </div>
-                    <hr style="margin: 5px 0; border: none; border-top: 1px solid #94a3b8;">
-                    <div style="display: flex; justify-content: space-between; font-size: 14px; color: #b91c1c;">
+                    <hr style="margin: 6px 0; border: none; border-top: 1px solid #cbd5e1;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14.5px; color: #b91c1c;">
                         <strong>Saldo Pendiente:</strong>
                         <strong>{moneda}{b_saldo_val:,.2f}</strong>
                     </div>
                 </div>
             </div>
 
-            <div style="background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:6px; text-align:center; font-size:12px; color:#1e3a8a; margin-bottom:10px;">
+            <div style="background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:8px; text-align:center; font-size:12px; color:#1e3a8a; margin-bottom:12px;">
                 <strong>ALIAS DE TRANSFERENCIA:</strong> {alias_banco} &nbsp;|&nbsp; <strong>TITULAR:</strong> {titular_banco}
             </div>
 
-            <div style="text-align: center; border-top: 1px dashed #aaa; padding-top: 8px; color: #64748b; font-size: 11px;">
+            <div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 10px; color: #64748b; font-size: 11.5px;">
                 <p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>
                 <p style="margin: 2px;">¡Muchas gracias por su compra!</p>
             </div>
         </div>
-        """
-        st.markdown(boleta_html_doc, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         st.write("")
         
         col_btn_b_down, col_btn_b_imp = st.columns(2)
@@ -952,13 +972,35 @@ elif st.session_state.seccion_activa == "Boletas":
             )
             
         with col_btn_b_imp:
+            html_content_b_esc = f"""
+            <div style='background-color: #ffffff; color: #111827; padding: 24px; font-family: Arial, sans-serif;'>
+                <div style='display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 10px;'>
+                    <div><h2 style='color:#15803d; margin:0;'>{titulo_actual}</h2><p style='color:#666; font-size:12px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p></div>
+                    <div style='text-align:right;'><h3 style='margin:0; color:#15803d;'>BOLETA #{int(bol_id):04d}</h3><p style='color:#666;'>Fecha: {bol_data['fecha']}</p></div>
+                </div>
+                <div style='background:#f0fdf4; padding:10px; margin:15px 0; border:1px solid #bbf7d0;'>
+                    <p style='margin:3px 0;'><strong>Cliente:</strong> {bol_data['cliente']}</p>
+                    <p style='margin:3px 0;'><strong>Teléfono:</strong> {b_tel}</p>
+                </div>
+                <table style='width:100%; border-collapse:collapse; margin-bottom:15px;'>
+                    <tr style='background:#15803d; color:white;'><th style='padding:8px; text-align:left;'>Detalle</th><th style='padding:8px; text-align:right;'>Importe</th></tr>
+                    <tr style='border-bottom:1px solid #ddd;'><td style='padding:8px;'>{b_det}</td><td style='padding:8px; text-align:right; font-weight:bold;'>{moneda}{b_tot_val:,.2f}</td></tr>
+                </table>
+                <div style='text-align:right; font-size:13px;'>
+                    <p>Total: <b>{moneda}{b_tot_val:,.2f}</b></p>
+                    <p style='color:#15803d;'>Abonado ({b_met}): <b>{moneda}{b_sena_val:,.2f}</b></p>
+                    <p style='color:#b91c1c; font-size:15px;'><b>Saldo Pendiente: {moneda}{b_saldo_val:,.2f}</b></p>
+                </div>
+                <div style='background:#eff6ff; padding:6px; text-align:center; font-size:12px; color:#1e3a8a; margin:10px 0;'>Alias: {alias_banco} | Titular: {titular_banco}</div>
+                <div style='text-align:center; font-size:11px; color:#888; border-top:1px dashed #ccc; padding-top:8px;'><p>Comprobante de entrega y pago interno. ¡Muchas gracias!</p></div>
+            </div>
+            """
             html_impresion_bol = f"""
             <script>
             function imprimirBoletaDirecta() {{
-                var contenido = `{boleta_html_doc}`;
                 var ventana = window.open('', '', 'height=700,width=900');
                 ventana.document.write('<html><head><title>Boleta #{bol_id}</title></head><body style="margin: 20px;">');
-                ventana.document.write(contenido);
+                ventana.document.write(`{html_content_b_esc}`);
                 ventana.document.write('</body></html>');
                 ventana.document.close();
                 ventana.focus();
@@ -1023,7 +1065,6 @@ elif st.session_state.seccion_activa == "Clientes":
             nombre_trab = str(trab_info['tipo_trabajo'])
             monto_tot = f"{float(trab_info['precio_venta'] or 0):,.2f}"
             
-            # Formatear plantilla personalizada configurada en Ajustes
             try:
                 msg_personalizado = msg_wsp_template.format(
                     cliente=cli_sel,
@@ -1109,114 +1150,172 @@ elif st.session_state.seccion_activa == "Insumos":
         st.info("Todavía no cargaste ningún insumo en el catálogo.")
 
 # ==========================================
-# VISTA 6: COMPRAS Y FACTURAS
+# VISTA 6: COMPRAS Y FACTURAS (MÚLTIPLES RENGLONES)
 # ==========================================
 elif st.session_state.seccion_activa == "Compras":
-    df_compras_raw = fetch_data_cached("SELECT id, fecha, factura, proveedor, producto, costo FROM compras ORDER BY fecha DESC, id DESC")
+    st.markdown("### 🛒 Registro de Compras y Facturas con Desglose")
     
-    with st.expander("➕ Cargar Factura / Compra de Insumos", expanded=False):
-        with st.form("form_compra", clear_on_submit=True):
-            col_c1, col_c2 = st.columns(2)
-            with col_c1:
-                proveedor = st.text_input("Proveedor (ej: VL Insumos) *")
-                factura = st.text_input("N° Factura / Remito")
-                fecha_compra = st.date_input("Fecha de Compra", value=date.today())
-            with col_c2:
-                producto = st.text_input("Detalle de Productos (ej: Vinilo + Cinta térmica) *")
-                costo_compra = st.number_input(f"Costo Total de la Factura ({moneda}) *", min_value=0.0, step=100.0)
+    with st.expander("➕ Cargar Factura con Múltiples Productos", expanded=False):
+        col_fc1, col_fc2, col_fc3 = st.columns(3)
+        with col_fc1:
+            prov_input = st.text_input("Proveedor * (ej: VL Insumos)", key="c_prov_multi")
+        with col_fc2:
+            fact_input = st.text_input("N° Factura / Remito", key="c_fact_multi")
+        with col_fc3:
+            fecha_input = st.date_input("Fecha de Compra", value=date.today(), key="c_fecha_multi")
+        
+        st.markdown("**Renglones de la Compra / Factura:**")
+        st.caption("Podés agregar tantos renglones como necesites haciendo clic en el `+` al final de la tabla.")
+        
+        if "df_items_compra" not in st.session_state:
+            st.session_state.df_items_compra = pd.DataFrame([
+                {"Detalle": "Vinilo Rojo", "Cantidad": 1.0, "Precio Unitario": 0.0},
+                {"Detalle": "Vinilo Verde", "Cantidad": 1.0, "Precio Unitario": 0.0},
+                {"Detalle": "Cinta Térmica", "Cantidad": 1.0, "Precio Unitario": 0.0}
+            ])
             
-            submit_compra = st.form_submit_button("Guardar Compra / Factura", use_container_width=True)
-            if submit_compra:
-                if proveedor.strip() and producto.strip() and costo_compra > 0:
-                    if IS_POSTGRES:
-                        run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (:f, :p, :fe, :pr, :c)",
-                                        {"f": factura, "p": proveedor, "fe": fecha_compra, "pr": producto, "c": costo_compra})
-                    else:
-                        run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, costo) VALUES (?, ?, ?, ?, ?)",
-                                        (factura, proveedor, fecha_compra, producto, costo_compra))
-                    st.success("Compra guardada correctamente.")
-                    st.rerun()
+        edited_items = st.data_editor(
+            st.session_state.df_items_compra,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Detalle": st.column_config.TextColumn("Detalle / Producto *", required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.01, default=1.0, step=1.0),
+                "Precio Unitario": st.column_config.NumberColumn(f"Precio Unit. ({moneda})", min_value=0.0, default=0.0, step=100.0)
+            },
+            key="editor_items_compras"
+        )
+        
+        # Calcular totales en tiempo real
+        df_calc = edited_items.dropna(subset=["Detalle"]).copy() if not edited_items.empty else pd.DataFrame()
+        if not df_calc.empty:
+            df_calc["Cantidad"] = pd.to_numeric(df_calc["Cantidad"], errors="coerce").fillna(1.0)
+            df_calc["Precio Unitario"] = pd.to_numeric(df_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+            df_calc["Importe"] = df_calc["Cantidad"] * df_calc["Precio Unitario"]
+            total_factura_calc = df_calc["Importe"].sum()
+        else:
+            total_factura_calc = 0.0
+            
+        st.markdown(f"<div style='text-align: right; font-size: 16px; font-weight: bold; color: #60a5fa; margin-bottom: 10px;'>TOTAL CALCULADO DE LA FACTURA: {moneda}{total_factura_calc:,.2f}</div>", unsafe_allow_html=True)
+        
+        if st.button("💾 Guardar Factura Completa", type="primary", use_container_width=True):
+            if not prov_input.strip():
+                st.error("Por favor completá el nombre del Proveedor.")
+            elif df_calc.empty:
+                st.error("Ingresá al menos un producto en la tabla.")
+            else:
+                for _, row_item in df_calc.iterrows():
+                    det_txt = str(row_item["Detalle"]).strip()
+                    cant_val = float(row_item["Cantidad"])
+                    pu_val = float(row_item["Precio Unitario"])
+                    tot_renglon = cant_val * pu_val
+                    if det_txt:
+                        if IS_POSTGRES:
+                            run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (:f, :p, :fe, :pr, :ca, :pu, :c)",
+                                            {"f": fact_input.strip(), "p": prov_input.strip(), "fe": fecha_input, "pr": det_txt, "ca": cant_val, "pu": pu_val, "c": tot_renglon})
+                        else:
+                            run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                            (factura_input.strip() if 'factura_input' in locals() else fact_input.strip(), prov_input.strip(), fecha_input, det_txt, cant_val, pu_val, tot_renglon))
+                st.success("¡Factura e ítems guardados con éxito!")
+                st.session_state.df_items_compra = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}])
+                st.rerun()
 
-    with st.expander("🗑️ Borrar Compra / Factura", expanded=False):
+    df_compras_raw = fetch_data_cached("SELECT id, fecha, factura, proveedor, producto, cantidad, precio_unitario, costo FROM compras ORDER BY fecha DESC, id DESC")
+
+    with st.expander("🗑️ Borrar Renglón de Compra", expanded=False):
         if not df_compras_raw.empty:
             opciones_c_del = {
-                f"#{row['id']} - {row['proveedor']} ({row['producto']}) - {moneda}{row['costo']:,.0f}": row['id']
+                f"#{row['id']} - {row['proveedor']} | {row['producto']} (Cant: {row['cantidad']} | {moneda}{row['costo']:,.0f})": row['id']
                 for _, row in df_compras_raw.iterrows()
             }
-            c_del_sel = st.selectbox("Seleccionar factura a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
+            c_del_sel = st.selectbox("Seleccionar ítem a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
             c_del_id = opciones_c_del[c_del_sel]
-            if st.button(f"❌ Borrar Factura #{c_del_id}", type="primary", use_container_width=True):
+            if st.button(f"❌ Borrar Registro #{c_del_id}", type="primary", use_container_width=True):
                 if IS_POSTGRES: run_execute_raw("DELETE FROM compras WHERE id = :id", {"id": c_del_id})
                 else: run_execute_raw("DELETE FROM compras WHERE id = ?", (c_del_id,))
-                st.warning(f"Factura #{c_del_id} eliminada.")
+                st.warning(f"Registro #{c_del_id} eliminado.")
                 st.rerun()
 
     st.divider()
     if not df_compras_raw.empty:
         df_compras_mostrar = df_compras_raw.copy()
-        busqueda_prov = st.text_input("🔍 Buscar:", key="search_prov", placeholder="Proveedor o producto...")
+        busqueda_prov = st.text_input("🔍 Buscar:", key="search_prov", placeholder="Proveedor, producto o factura...")
         if busqueda_prov:
             df_compras_mostrar = df_compras_mostrar[
                 df_compras_mostrar['proveedor'].str.contains(busqueda_prov, case=False, na=False) |
-                df_compras_mostrar['producto'].str.contains(busqueda_prov, case=False, na=False)
+                df_compras_mostrar['producto'].str.contains(busqueda_prov, case=False, na=False) |
+                df_compras_mostrar['factura'].fillna('').str.contains(busqueda_prov, case=False, na=False)
             ]
         
         df_mostrar_compras = df_compras_mostrar.rename(columns={
             'id': 'ID',
             'fecha': 'Fecha',
-            'factura': 'Factura',
+            'factura': 'N° Factura',
             'proveedor': 'Proveedor',
-            'producto': 'Producto',
-            'costo': f'Costo ({moneda})'
+            'producto': 'Detalle / Producto',
+            'cantidad': 'Cant.',
+            'precio_unitario': f'P. Unit. ({moneda})',
+            'costo': f'Importe ({moneda})'
         })
-        st.dataframe(df_mostrar_compras, use_container_width=True)
+        st.dataframe(df_mostrar_compras[['Fecha', 'N° Factura', 'Proveedor', 'Detalle / Producto', 'Cant.', f'P. Unit. ({moneda})', f'Importe ({moneda})']], use_container_width=True)
     else:
         st.info("Todavía no hay compras cargadas.")
 
 # ==========================================
-# VISTA 7: BALANCE Y FINANZAS
+# VISTA 7: BALANCE Y FINANZAS (INGRESOS vs GASTOS COMPLETOS)
 # ==========================================
 elif st.session_state.seccion_activa == "Balance":
-    df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas FROM trabajos")
-    df_gastos_total = fetch_data_cached("SELECT SUM(costo) as total_gastos FROM compras")
+    df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas, SUM(costo_material) as total_costos_prod FROM trabajos")
+    df_gastos_compras = fetch_data_cached("SELECT SUM(costo) as total_compras FROM compras")
     
-    total_ventas = df_ventas_total['total_ventas'].iloc[0] or 0.0
-    total_gastos = df_gastos_total['total_gastos'].iloc[0] or 0.0
-    ganancia_neta = total_ventas - total_gastos
+    total_ventas = float(df_ventas_total['total_ventas'].iloc[0] or 0.0)
+    total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
+    total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
+    
+    # Egresos Totales = Compras de Insumos + Costos de Producción/Tercerizado
+    total_egresos_completo = total_costos_produccion + total_compras
+    ganancia_neta = total_ventas - total_egresos_completo
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric(f"Ingresos Totales", f"{moneda}{total_ventas:,.2f}")
-    kpi2.metric(f"Egresos (Compras)", f"{moneda}{total_gastos:,.2f}")
-    kpi3.metric(f"Ganancia Neta", f"{moneda}{ganancia_neta:,.2f}", delta=f"{moneda}{ganancia_neta:,.2f}")
-    kpi4.metric("Margen de Ganancia", f"{margen:.1f}%")
+    kpi1.metric(f"Ingresos Totales (Ventas)", f"{moneda}{total_ventas:,.2f}")
+    kpi2.metric(f"Egresos Totales (Gastos)", f"{moneda}{total_egresos_completo:,.2f}")
+    kpi3.metric(f"Ganancia Neta Real", f"{moneda}{ganancia_neta:,.2f}", delta=f"{moneda}{ganancia_neta:,.2f}")
+    kpi4.metric("Margen Neto", f"{margen:.1f}%")
 
     st.divider()
     
+    st.markdown("### 🔍 Desglose Detallado de Egresos y Caja")
+    col_egr1, col_egr2, col_egr3 = st.columns(3)
+    col_egr1.metric("🛠️ Costos de Producción / Talleres", f"{moneda}{total_costos_produccion:,.2f}")
+    col_egr2.metric("🧾 Facturas de Compras / Insumos", f"{moneda}{total_compras:,.2f}")
+    
     df_pagos_metodo = fetch_data_cached("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
+    efectivo_en_mano = 0.0
+    banco_mp = 0.0
     if not df_pagos_metodo.empty:
-        st.markdown("### 💵 Desglose de Cobranzas en Mano")
-        col_caj1, col_caj2 = st.columns(2)
         for _, r in df_pagos_metodo.iterrows():
             met = r['metodo_pago'] or 'Efectivo (Caja Taller)'
-            monto = r['total_cobrado'] or 0.0
+            monto = float(r['total_cobrado'] or 0.0)
             if "Efectivo" in str(met):
-                col_caj1.metric("💵 Total en Efectivo (Caja Taller)", f"{moneda}{monto:,.2f}")
+                efectivo_en_mano += monto
             else:
-                col_caj2.metric("🏦 Total en Banco / Mercado Pago", f"{moneda}{monto:,.2f}")
+                banco_mp += monto
+                
+    col_egr3.metric("💵 Caja Taller (Efectivo)", f"{moneda}{efectivo_en_mano:,.2f}")
 
     st.divider()
     
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        st.markdown("**Comparativa: Ventas vs Compras**")
+        st.markdown("**Comparativa: Ventas vs Egresos Totales**")
         df_comp = pd.DataFrame({
-            "Concepto": ["Ventas", "Compras"],
-            f"Monto ({moneda})": [total_ventas, total_gastos]
+            "Concepto": ["Ingresos (Ventas)", "Costos Producción", "Facturas Compras", "Ganancia Neta"],
+            f"Monto ({moneda})": [total_ventas, total_costos_produccion, total_compras, ganancia_neta]
         })
         fig_bar = px.bar(
             df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
-            color_discrete_map={"Ventas": "#3b82f6", "Compras": "#ef4444"},
+            color_discrete_map={"Ingresos (Ventas)": "#3b82f6", "Costos Producción": "#f59e0b", "Facturas Compras": "#ef4444", "Ganancia Neta": "#10b981"},
             template="plotly_dark"
         )
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -1252,8 +1351,8 @@ elif st.session_state.seccion_activa == "Ajustes":
             
             st.markdown("---")
             st.markdown("### 📲 Mensaje Predeterminado de WhatsApp")
-            st.caption("Podés usar las variables automáticas: `{cliente}`, `{trabajo}`, `{total}`, `{alias}`")
-            cfg_msg_wsp = st.text_area("Plantilla de Mensaje para Clientes:", value=msg_wsp_template, height=90)
+            st.caption("Variables disponibles: `{cliente}`, `{trabajo}`, `{total}`, `{alias}`")
+            cfg_msg_wsp = st.text_area("Plantilla de Mensaje:", value=msg_wsp_template, height=85)
             
             guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
             if guardar_cfg:
