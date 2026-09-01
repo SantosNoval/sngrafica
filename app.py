@@ -626,7 +626,7 @@ if st.session_state.seccion_activa == "Trabajos":
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
 # ==========================================
-# VISTA 2: PRESUPUESTOS (CON VISTA PREVIA VISUAL)
+# VISTA 2: PRESUPUESTOS (VISTA PREVIA CORREGIDA)
 # ==========================================
 elif st.session_state.seccion_activa == "Presupuestos":
     with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
@@ -709,61 +709,41 @@ elif st.session_state.seccion_activa == "Presupuestos":
             pr_det, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
         )
         
-        # Renderizado Visual Limpio sin código crudo
         st.markdown("### 👁️ Vista Previa del Presupuesto")
-        with st.container():
-            st.markdown(f"""
-            <div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 16px;">
-                    <div>
-                        <h2 style="margin: 0; color: #1e3a8a; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>
-                        <p style="margin: 3px 0; font-size: 13px; color: #475569;">{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>
-                        <span style="font-size: 12px; font-weight: bold; color: #2563eb; background-color: #eff6ff; padding: 3px 8px; border-radius: 4px;">PRESUPUESTO ESTIMADO</span>
-                    </div>
-                    <div style="text-align: right;">
-                        <h3 style="margin: 0; color: #1e293b; font-size: 17px; font-weight: 800;">N° #{int(pres_id):04d}</h3>
-                        <p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {pres_data['fecha']}</p>
-                    </div>
-                </div>
-
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">
-                    <p style="margin: 3px 0;"><strong>Cliente:</strong> {pres_data['cliente']}</p>
-                    <p style="margin: 3px 0;"><strong>Teléfono:</strong> {pr_tel}</p>
-                    <p style="margin: 3px 0;"><strong>Rubro / Categoría:</strong> {pres_data['tipo_trabajo']}</p>
-                </div>
-
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">
-                    <thead>
-                        <tr style="background-color: #1e3a8a; color: #ffffff;">
-                            <th style="padding: 10px; text-align: left; border-top-left-radius: 6px;">Detalle del Trabajo</th>
-                            <th style="padding: 10px; text-align: center; width: 60px;">Cant.</th>
-                            <th style="padding: 10px; text-align: right; width: 110px;">P. Unitario</th>
-                            <th style="padding: 10px; text-align: right; width: 110px; border-top-right-radius: 6px;">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
-                            <td style="padding: 12px 10px; color: #334155;">{pr_det}</td>
-                            <td style="padding: 12px 10px; text-align: center; color: #334155;">{pr_cant_val:,.0f}</td>
-                            <td style="padding: 12px 10px; text-align: right; color: #334155;">{moneda}{pr_unit_val:,.2f}</td>
-                            <td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
-                    <div style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; min-width: 220px; text-align: right;">
-                        <span style="font-size: 13px; color: #64748b;">TOTAL PRESUPUESTO:</span><br/>
-                        <strong style="font-size: 18px; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</strong>
-                    </div>
-                </div>
-
-                <div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 12px; color: #64748b; font-size: 11.5px;">
-                    <p style="margin: 2px;">{pie_empresa}</p>
-                    <p style="margin: 2px;">¡Muchas gracias por su consulta!</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        
+        # HTML unificado sin indentaciones para evitar que markdown lo interprete como código
+        html_preview = (
+            f'<div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: sans-serif; max-width: 820px; margin: 0 auto;">'
+            f'<div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 16px;">'
+            f'<div><h2 style="margin: 0; color: #1e3a8a; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #475569;">{dir_empresa} {(" | " + tel_empresa) if tel_empresa else ""}</p>'
+            f'<span style="font-size: 12px; font-weight: bold; color: #2563eb; background-color: #eff6ff; padding: 3px 8px; border-radius: 4px;">PRESUPUESTO ESTIMADO</span></div>'
+            f'<div style="text-align: right;"><h3 style="margin: 0; color: #1e293b; font-size: 17px; font-weight: 800;">N° #{int(pres_id):04d}</h3>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {pres_data["fecha"]}</p></div></div>'
+            f'<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">'
+            f'<p style="margin: 3px 0;"><strong>Cliente:</strong> {pres_data["cliente"]}</p>'
+            f'<p style="margin: 3px 0;"><strong>Teléfono:</strong> {pr_tel}</p>'
+            f'<p style="margin: 3px 0;"><strong>Rubro / Categoría:</strong> {pres_data["tipo_trabajo"]}</p></div>'
+            f'<table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">'
+            f'<thead><tr style="background-color: #1e3a8a; color: #ffffff;">'
+            f'<th style="padding: 10px; text-align: left;">Detalle del Trabajo</th>'
+            f'<th style="padding: 10px; text-align: center; width: 60px;">Cant.</th>'
+            f'<th style="padding: 10px; text-align: right; width: 110px;">P. Unitario</th>'
+            f'<th style="padding: 10px; text-align: right; width: 110px;">Total</th></tr></thead>'
+            f'<tbody><tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">'
+            f'<td style="padding: 12px 10px; color: #334155;">{pr_det}</td>'
+            f'<td style="padding: 12px 10px; text-align: center; color: #334155;">{pr_cant_val:,.0f}</td>'
+            f'<td style="padding: 12px 10px; text-align: right; color: #334155;">{moneda}{pr_unit_val:,.2f}</td>'
+            f'<td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</td></tr></tbody></table>'
+            f'<div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">'
+            f'<div style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; min-width: 220px; text-align: right;">'
+            f'<span style="font-size: 13px; color: #64748b;">TOTAL:</span><br/>'
+            f'<strong style="font-size: 18px; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</strong></div></div>'
+            f'<div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 12px; color: #64748b; font-size: 11.5px;">'
+            f'<p style="margin: 2px;">{pie_empresa}</p>'
+            f'<p style="margin: 2px;">¡Muchas gracias por su consulta!</p></div></div>'
+        )
+        st.markdown(html_preview, unsafe_allow_html=True)
             
         st.write("")
         col_btn_p_down, col_btn_p_imp = st.columns(2)
@@ -777,31 +757,12 @@ elif st.session_state.seccion_activa == "Presupuestos":
             )
             
         with col_btn_p_imp:
-            html_content_escaped = f"""
-            <div style='background-color: #ffffff; color: #111827; padding: 24px; font-family: Arial, sans-serif;'>
-                <div style='display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;'>
-                    <div><h2 style='color:#1e3a8a; margin:0;'>{titulo_actual}</h2><p style='color:#666; font-size:12px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p></div>
-                    <div style='text-align:right;'><h3 style='margin:0;'>N° #{int(pres_id):04d}</h3><p style='color:#666;'>Fecha: {pres_data['fecha']}</p></div>
-                </div>
-                <div style='background:#f8fafc; padding:10px; margin:15px 0; border:1px solid #ddd;'>
-                    <p style='margin:3px 0;'><strong>Cliente:</strong> {pres_data['cliente']}</p>
-                    <p style='margin:3px 0;'><strong>Teléfono:</strong> {pr_tel}</p>
-                    <p style='margin:3px 0;'><strong>Rubro:</strong> {pres_data['tipo_trabajo']}</p>
-                </div>
-                <table style='width:100%; border-collapse:collapse; margin-bottom:15px;'>
-                    <tr style='background:#1e3a8a; color:white;'><th style='padding:8px; text-align:left;'>Detalle</th><th style='padding:8px; text-align:center;'>Cant.</th><th style='padding:8px; text-align:right;'>P. Unit.</th><th style='padding:8px; text-align:right;'>Total</th></tr>
-                    <tr style='border-bottom:1px solid #ddd;'><td style='padding:8px;'>{pr_det}</td><td style='padding:8px; text-align:center;'>{pr_cant_val:,.0f}</td><td style='padding:8px; text-align:right;'>{moneda}{pr_unit_val:,.2f}</td><td style='padding:8px; text-align:right; font-weight:bold;'>{moneda}{pr_tot_val:,.2f}</td></tr>
-                </table>
-                <div style='text-align:right; font-size:16px; font-weight:bold; color:#1e3a8a; margin-bottom:15px;'>TOTAL: {moneda}{pr_tot_val:,.2f}</div>
-                <div style='text-align:center; font-size:11px; color:#888; border-top:1px dashed #ccc; padding-top:8px;'><p>{pie_empresa}</p></div>
-            </div>
-            """
             html_impresion_pres = f"""
             <script>
             function imprimirPresupuesto() {{
                 var ventana = window.open('', '', 'height=700,width=900');
                 ventana.document.write('<html><head><title>Presupuesto #{pres_id}</title></head><body style="margin: 20px;">');
-                ventana.document.write(`{html_content_escaped}`);
+                ventana.document.write(`{html_preview}`);
                 ventana.document.write('</body></html>');
                 ventana.document.close();
                 ventana.focus();
@@ -897,68 +858,37 @@ elif st.session_state.seccion_activa == "Boletas":
         )
         
         st.markdown("### 👁️ Vista Previa del Comprobante")
-        st.markdown(f"""
-        <div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">
-            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 12px; margin-bottom: 16px;">
-                <div>
-                    <h2 style="margin: 0; color: #15803d; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>
-                    <p style="margin: 3px 0; font-size: 13px; color: #475569;">{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p>
-                    <span style="font-size: 12px; font-weight: bold; color: #15803d; background-color: #f0fdf4; padding: 3px 8px; border-radius: 4px;">BOLETA / COMPROBANTE DE PAGO</span>
-                </div>
-                <div style="text-align: right;">
-                    <h3 style="margin: 0; color: #15803d; font-size: 17px; font-weight: 800;">BOLETA N° #{int(bol_id):04d}</h3>
-                    <p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {bol_data['fecha']}</p>
-                </div>
-            </div>
-            
-            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">
-                <p style="margin: 3px 0;"><strong>Cliente:</strong> {bol_data['cliente']}</p>
-                <p style="margin: 3px 0;"><strong>Teléfono:</strong> {b_tel}</p>
-            </div>
-
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">
-                <thead>
-                    <tr style="background-color: #15803d; color: #ffffff;">
-                        <th style="padding: 10px; text-align: left; border-top-left-radius: 6px;">Detalle del Trabajo</th>
-                        <th style="padding: 10px; text-align: right; width: 130px; border-top-right-radius: 6px;">Importe</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
-                        <td style="padding: 12px 10px; color: #334155;">{b_det}</td>
-                        <td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #15803d;">{moneda}{b_tot_val:,.2f}</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
-                <div style="width: 270px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 8px; font-size: 13px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                        <span>Total:</span>
-                        <strong>{moneda}{b_tot_val:,.2f}</strong>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #15803d;">
-                        <span>Abonado ({b_met}):</span>
-                        <strong>{moneda}{b_sena_val:,.2f}</strong>
-                    </div>
-                    <hr style="margin: 6px 0; border: none; border-top: 1px solid #cbd5e1;">
-                    <div style="display: flex; justify-content: space-between; font-size: 14.5px; color: #b91c1c;">
-                        <strong>Saldo Pendiente:</strong>
-                        <strong>{moneda}{b_saldo_val:,.2f}</strong>
-                    </div>
-                </div>
-            </div>
-
-            <div style="background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:8px; text-align:center; font-size:12px; color:#1e3a8a; margin-bottom:12px;">
-                <strong>ALIAS DE TRANSFERENCIA:</strong> {alias_banco} &nbsp;|&nbsp; <strong>TITULAR:</strong> {titular_banco}
-            </div>
-
-            <div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 10px; color: #64748b; font-size: 11.5px;">
-                <p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>
-                <p style="margin: 2px;">¡Muchas gracias por su compra!</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        html_preview_bol = (
+            f'<div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: sans-serif; max-width: 820px; margin: 0 auto;">'
+            f'<div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 12px; margin-bottom: 16px;">'
+            f'<div><h2 style="margin: 0; color: #15803d; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #475569;">{dir_empresa} {(" | " + tel_empresa) if tel_empresa else ""}</p>'
+            f'<span style="font-size: 12px; font-weight: bold; color: #15803d; background-color: #f0fdf4; padding: 3px 8px; border-radius: 4px;">BOLETA / COMPROBANTE DE PAGO</span></div>'
+            f'<div style="text-align: right;"><h3 style="margin: 0; color: #15803d; font-size: 17px; font-weight: 800;">BOLETA N° #{int(bol_id):04d}</h3>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {bol_data["fecha"]}</p></div></div>'
+            f'<div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">'
+            f'<p style="margin: 3px 0;"><strong>Cliente:</strong> {bol_data["cliente"]}</p>'
+            f'<p style="margin: 3px 0;"><strong>Teléfono:</strong> {b_tel}</p></div>'
+            f'<table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">'
+            f'<thead><tr style="background-color: #15803d; color: #ffffff;">'
+            f'<th style="padding: 10px; text-align: left;">Detalle del Trabajo</th>'
+            f'<th style="padding: 10px; text-align: right; width: 130px;">Importe</th></tr></thead>'
+            f'<tbody><tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">'
+            f'<td style="padding: 12px 10px; color: #334155;">{b_det}</td>'
+            f'<td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #15803d;">{moneda}{b_tot_val:,.2f}</td></tr></tbody></table>'
+            f'<div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">'
+            f'<div style="width: 270px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 8px; font-size: 13px;">'
+            f'<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Total:</span><strong>{moneda}{b_tot_val:,.2f}</strong></div>'
+            f'<div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #15803d;"><span>Abonado ({b_met}):</span><strong>{moneda}{b_sena_val:,.2f}</strong></div>'
+            f'<hr style="margin: 6px 0; border: none; border-top: 1px solid #cbd5e1;">'
+            f'<div style="display: flex; justify-content: space-between; font-size: 14.5px; color: #b91c1c;"><strong>Saldo Pendiente:</strong><strong>{moneda}{b_saldo_val:,.2f}</strong></div></div></div>'
+            f'<div style="background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:8px; text-align:center; font-size:12px; color:#1e3a8a; margin-bottom:12px;">'
+            f'<strong>ALIAS:</strong> {alias_banco} &nbsp;|&nbsp; <strong>TITULAR:</strong> {titular_banco}</div>'
+            f'<div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 10px; color: #64748b; font-size: 11.5px;">'
+            f'<p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>'
+            f'<p style="margin: 2px;">¡Muchas gracias por su compra!</p></div></div>'
+        )
+        st.markdown(html_preview_bol, unsafe_allow_html=True)
         st.write("")
         
         col_btn_b_down, col_btn_b_imp = st.columns(2)
@@ -972,35 +902,12 @@ elif st.session_state.seccion_activa == "Boletas":
             )
             
         with col_btn_b_imp:
-            html_content_b_esc = f"""
-            <div style='background-color: #ffffff; color: #111827; padding: 24px; font-family: Arial, sans-serif;'>
-                <div style='display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 10px;'>
-                    <div><h2 style='color:#15803d; margin:0;'>{titulo_actual}</h2><p style='color:#666; font-size:12px;'>{dir_empresa} {(' | ' + tel_empresa) if tel_empresa else ''}</p></div>
-                    <div style='text-align:right;'><h3 style='margin:0; color:#15803d;'>BOLETA #{int(bol_id):04d}</h3><p style='color:#666;'>Fecha: {bol_data['fecha']}</p></div>
-                </div>
-                <div style='background:#f0fdf4; padding:10px; margin:15px 0; border:1px solid #bbf7d0;'>
-                    <p style='margin:3px 0;'><strong>Cliente:</strong> {bol_data['cliente']}</p>
-                    <p style='margin:3px 0;'><strong>Teléfono:</strong> {b_tel}</p>
-                </div>
-                <table style='width:100%; border-collapse:collapse; margin-bottom:15px;'>
-                    <tr style='background:#15803d; color:white;'><th style='padding:8px; text-align:left;'>Detalle</th><th style='padding:8px; text-align:right;'>Importe</th></tr>
-                    <tr style='border-bottom:1px solid #ddd;'><td style='padding:8px;'>{b_det}</td><td style='padding:8px; text-align:right; font-weight:bold;'>{moneda}{b_tot_val:,.2f}</td></tr>
-                </table>
-                <div style='text-align:right; font-size:13px;'>
-                    <p>Total: <b>{moneda}{b_tot_val:,.2f}</b></p>
-                    <p style='color:#15803d;'>Abonado ({b_met}): <b>{moneda}{b_sena_val:,.2f}</b></p>
-                    <p style='color:#b91c1c; font-size:15px;'><b>Saldo Pendiente: {moneda}{b_saldo_val:,.2f}</b></p>
-                </div>
-                <div style='background:#eff6ff; padding:6px; text-align:center; font-size:12px; color:#1e3a8a; margin:10px 0;'>Alias: {alias_banco} | Titular: {titular_banco}</div>
-                <div style='text-align:center; font-size:11px; color:#888; border-top:1px dashed #ccc; padding-top:8px;'><p>Comprobante de entrega y pago interno. ¡Muchas gracias!</p></div>
-            </div>
-            """
             html_impresion_bol = f"""
             <script>
             function imprimirBoletaDirecta() {{
                 var ventana = window.open('', '', 'height=700,width=900');
                 ventana.document.write('<html><head><title>Boleta #{bol_id}</title></head><body style="margin: 20px;">');
-                ventana.document.write(`{html_content_b_esc}`);
+                ventana.document.write(`{html_preview_bol}`);
                 ventana.document.write('</body></html>');
                 ventana.document.close();
                 ventana.focus();
@@ -1186,7 +1093,6 @@ elif st.session_state.seccion_activa == "Compras":
             key="editor_items_compras"
         )
         
-        # Calcular totales en tiempo real
         df_calc = edited_items.dropna(subset=["Detalle"]).copy() if not edited_items.empty else pd.DataFrame()
         if not df_calc.empty:
             df_calc["Cantidad"] = pd.to_numeric(df_calc["Cantidad"], errors="coerce").fillna(1.0)
@@ -1215,7 +1121,7 @@ elif st.session_state.seccion_activa == "Compras":
                                             {"f": fact_input.strip(), "p": prov_input.strip(), "fe": fecha_input, "pr": det_txt, "ca": cant_val, "pu": pu_val, "c": tot_renglon})
                         else:
                             run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                            (factura_input.strip() if 'factura_input' in locals() else fact_input.strip(), prov_input.strip(), fecha_input, det_txt, cant_val, pu_val, tot_renglon))
+                                            (fact_input.strip(), prov_input.strip(), fecha_input, det_txt, cant_val, pu_val, tot_renglon))
                 st.success("¡Factura e ítems guardados con éxito!")
                 st.session_state.df_items_compra = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}])
                 st.rerun()
@@ -1272,7 +1178,6 @@ elif st.session_state.seccion_activa == "Balance":
     total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
     total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
     
-    # Egresos Totales = Compras de Insumos + Costos de Producción/Tercerizado
     total_egresos_completo = total_costos_produccion + total_compras
     ganancia_neta = total_ventas - total_egresos_completo
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
