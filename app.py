@@ -608,11 +608,9 @@ if st.session_state.seccion_activa == "Trabajos":
         with col_filtro3:
             busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
-        # Filtro por estado
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
             
-        # Filtro por búsqueda
         if busq_trabajo:
             df_trabajos_tabla = df_trabajos_tabla[
                 df_trabajos_tabla['cliente'].str.contains(busq_trabajo, case=False, na=False) |
@@ -620,7 +618,6 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
-        # Ordenamiento dinámico
         df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
         
         if criterio_orden == "Fecha Entrega (Próximos primero)":
@@ -652,7 +649,7 @@ if st.session_state.seccion_activa == "Trabajos":
             'precio_venta': f'Venta ({moneda})'
         })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
         
-        st.dataframe(df_mostrar, use_container_width=True)
+        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
     else:
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
@@ -740,7 +737,6 @@ elif st.session_state.seccion_activa == "Presupuestos":
             pr_det, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
         )
         
-        # Vista Previa Visual
         st.markdown("### 👁️ Vista Previa del Presupuesto")
         info_emp_sub = f"{dir_empresa} | {tel_empresa}" if (dir_empresa and tel_empresa) else (dir_empresa or tel_empresa or "")
         
@@ -1065,13 +1061,13 @@ elif st.session_state.seccion_activa == "Clientes":
 
         st.subheader("📋 Pedidos del Cliente")
         if not df_hist_trab.empty:
-            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'telefono': 'Teléfono', 'fecha_carga': 'Fecha Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})'})[['Trabajo', 'Teléfono', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Venta ({moneda})']], use_container_width=True)
+            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'telefono': 'Teléfono', 'fecha_carga': 'Fecha Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})'})[['Trabajo', 'Teléfono', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Venta ({moneda})']], use_container_width=True, hide_index=True)
         else:
             st.info("No hay trabajos registrados para este cliente.")
             
         st.subheader("🧾 Comprobantes de Pago y Saldos")
         if not df_hist_bol.empty:
-            st.dataframe(df_hist_bol.rename(columns={'fecha': 'Fecha', 'detalle': 'Detalle', 'metodo_pago': 'Método', 'total': f'Total ({moneda})', 'sena': f'Abonado ({moneda})', 'saldo': f'Saldo ({moneda})'}), use_container_width=True)
+            st.dataframe(df_hist_bol.rename(columns={'fecha': 'Fecha', 'detalle': 'Detalle', 'metodo_pago': 'Método', 'total': f'Total ({moneda})', 'sena': f'Abonado ({moneda})', 'saldo': f'Saldo ({moneda})'}), use_container_width=True, hide_index=True)
         else:
             st.info("No hay boletas emitidas para este cliente.")
     else:
@@ -1116,7 +1112,7 @@ elif st.session_state.seccion_activa == "Insumos":
             'costo_unitario': f'Costo Base ({moneda})',
             'multiplicador_sugerido': 'Multiplicador',
             'precio_sugerido': f'Precio Venta Sugerido ({moneda})'
-        })[['Material / Insumo', 'Unidad', f'Costo Base ({moneda})', 'Multiplicador', f'Precio Venta Sugerido ({moneda})']], use_container_width=True)
+        })[['Material / Insumo', 'Unidad', f'Costo Base ({moneda})', 'Multiplicador', f'Precio Venta Sugerido ({moneda})']], use_container_width=True, hide_index=True)
         
         with st.expander("🗑️ Eliminar Insumo"):
             opc_in_del = {row['nombre']: row['id'] for _, row in df_insumos.iterrows()}
@@ -1235,7 +1231,7 @@ elif st.session_state.seccion_activa == "Compras":
             'precio_unitario': f'P. Unit. ({moneda})',
             'costo': f'Importe ({moneda})'
         })
-        st.dataframe(df_mostrar_compras[['Fecha', 'N° Factura', 'Proveedor', 'Detalle / Producto', 'Cant.', f'P. Unit. ({moneda})', f'Importe ({moneda})']], use_container_width=True)
+        st.dataframe(df_mostrar_compras[['Fecha', 'N° Factura', 'Proveedor', 'Detalle / Producto', 'Cant.', f'P. Unit. ({moneda})', f'Importe ({moneda})']], use_container_width=True, hide_index=True)
     else:
         st.info("Todavía no hay compras cargadas.")
 
