@@ -86,6 +86,7 @@ def init_db_tables():
                 CREATE TABLE IF NOT EXISTS trabajos (
                     id SERIAL PRIMARY KEY,
                     fecha_carga DATE,
+                    hora_carga TEXT,
                     fecha_entrega DATE,
                     cliente TEXT,
                     telefono TEXT,
@@ -135,6 +136,8 @@ def init_db_tables():
                     nombre TEXT UNIQUE
                 );
             """))
+            try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS hora_carga TEXT;"))
+            except Exception: pass
             try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS telefono TEXT;"))
             except Exception: pass
             try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;"))
@@ -150,12 +153,14 @@ def init_db_tables():
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS compras (id INTEGER PRIMARY KEY AUTOINCREMENT, factura TEXT, proveedor TEXT, fecha DATE, producto TEXT, cantidad REAL DEFAULT 1, precio_unitario REAL DEFAULT 0, costo REAL)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, fecha_entrega DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, taller_externo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, hora_carga TEXT, fecha_entrega DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, taller_externo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS presupuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, detalle TEXT, cantidad REAL, precio_unitario REAL, precio_total REAL, costo_material REAL, estado TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS boletas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, detalle TEXT, metodo_pago TEXT, total REAL, sena REAL, saldo REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS insumos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, unidad TEXT, costo_unitario REAL, multiplicador_sugerido REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS tipos_trabajo (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE)")
+        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN hora_carga TEXT")
+        except Exception: pass
         try: cursor.execute("ALTER TABLE trabajos ADD COLUMN telefono TEXT")
         except Exception: pass
         try: cursor.execute("ALTER TABLE trabajos ADD COLUMN taller_externo TEXT")
@@ -464,11 +469,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS
+# VISTA 1: TRABAJOS Y PEDIDOS (CON FECHA Y HORA)
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
-        SELECT id, cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta 
+        SELECT id, cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta 
         FROM trabajos 
         ORDER BY fecha_entrega ASC, id DESC
     """)
@@ -498,12 +503,13 @@ if st.session_state.seccion_activa == "Trabajos":
             guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
             if guardar_nuevo:
                 if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
+                    hora_actual_str = datetime.now().strftime("%H:%M")
                     if IS_POSTGRES:
-                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :fe, :e, :cm, :pv)",
-                                        {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": nuevo_fcarga, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio})
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv)",
+                                        {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": nuevo_fcarga, "hc": hora_actual_str, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio})
                     else:
-                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), nuevo_fcarga, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio))
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), nuevo_fcarga, hora_actual_str, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio))
                     st.success("¡Trabajo guardado con éxito!")
                     st.rerun()
                 else:
@@ -525,6 +531,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 except Exception: fc_val = date.today()
                 try: fe_val = datetime.strptime(str(datos_sel['fecha_entrega']), "%Y-%m-%d").date()
                 except Exception: fe_val = date.today()
+                hora_existente = str(datos_sel.get('hora_carga') or '')
 
                 with st.form(f"form_mod_{id_mod}"):
                     col_ed1, col_ed2 = st.columns(2)
@@ -536,7 +543,11 @@ if st.session_state.seccion_activa == "Trabajos":
                         ed_taller = st.text_input("Imprenta Tercerizada", value=str(datos_sel.get('taller_externo') or ''))
                         idx_e = ESTADOS_TRABAJO.index(datos_sel['estado']) if datos_sel['estado'] in ESTADOS_TRABAJO else 0
                         ed_estado = st.selectbox("Estado del Pedido", ESTADOS_TRABAJO, index=idx_e)
-                        ed_fc = st.date_input("Fecha Carga", value=fc_val)
+                        col_mfc1, col_mfc2 = st.columns(2)
+                        with col_mfc1:
+                            ed_fc = st.date_input("Fecha Carga", value=fc_val)
+                        with col_mfc2:
+                            ed_hc = st.text_input("Hora Carga (HH:MM)", value=hora_existente if hora_existente else datetime.now().strftime("%H:%M"))
                         ed_fe = st.date_input("Fecha Entrega", value=fe_val)
                         
                     col_edm1, col_edm2 = st.columns(2)
@@ -549,11 +560,11 @@ if st.session_state.seccion_activa == "Trabajos":
                     if guardar_mod:
                         if ed_cliente.strip() and ed_trabajo.strip() and ed_precio > 0:
                             if IS_POSTGRES:
-                                run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
-                                                {"c": ed_cliente.strip(), "tel": ed_tel.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": ed_fc, "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod})
+                                run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, hora_carga=:hc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
+                                                {"c": ed_cliente.strip(), "tel": ed_tel.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": ed_fc, "hc": ed_hc.strip(), "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod})
                             else:
-                                run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
-                                                (ed_cliente.strip(), ed_tel.strip(), ed_trabajo.strip(), ed_taller.strip(), ed_fc, ed_fe, ed_estado, ed_costo, ed_precio, id_mod))
+                                run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, hora_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
+                                                (ed_cliente.strip(), ed_tel.strip(), ed_trabajo.strip(), ed_taller.strip(), ed_fc, ed_hc.strip(), ed_fe, ed_estado, ed_costo, ed_precio, id_mod))
                             st.success("¡Trabajo actualizado!")
                             st.rerun()
 
@@ -590,6 +601,12 @@ if st.session_state.seccion_activa == "Trabajos":
     if not df_todos_trabajos.empty:
         df_trabajos_tabla = df_todos_trabajos.copy()
         
+        # Formato de Fecha de Carga que incluye la Hora
+        df_trabajos_tabla['hora_limpia'] = df_trabajos_tabla['hora_carga'].fillna('')
+        df_trabajos_tabla['fecha_carga_mostrar'] = df_trabajos_tabla.apply(
+            lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
+        )
+        
         col_filtro1, col_filtro2, col_filtro3 = st.columns([1.5, 1.5, 2])
         with col_filtro1:
             opciones_filtro = ["Todos"] + ESTADOS_TRABAJO
@@ -608,9 +625,11 @@ if st.session_state.seccion_activa == "Trabajos":
         with col_filtro3:
             busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
+        # Filtro por estado
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
             
+        # Filtro por búsqueda
         if busq_trabajo:
             df_trabajos_tabla = df_trabajos_tabla[
                 df_trabajos_tabla['cliente'].str.contains(busq_trabajo, case=False, na=False) |
@@ -618,14 +637,15 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
+        # Ordenamiento dinámico teniendo en cuenta fecha, hora e id
         df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
         
         if criterio_orden == "Fecha Entrega (Próximos primero)":
             df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_entrega", ascending=True)
         elif criterio_orden == "Fecha Carga (Más recientes)":
-            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_carga", ascending=False)
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by=["fecha_carga", "hora_limpia", "id"], ascending=[False, False, False])
         elif criterio_orden == "Fecha Carga (Más antiguos)":
-            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_carga", ascending=True)
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by=["fecha_carga", "hora_limpia", "id"], ascending=[True, True, True])
         elif criterio_orden == "Cliente (A - Z)":
             df_trabajos_tabla = df_trabajos_tabla.sort_values(by="cliente", ascending=True)
         elif criterio_orden == "Cliente (Z - A)":
@@ -642,12 +662,12 @@ if st.session_state.seccion_activa == "Trabajos":
             'telefono': 'Teléfono',
             'tipo_trabajo': 'Trabajo',
             'taller_externo': 'Imprenta / Taller',
-            'fecha_carga': 'Fecha Carga',
+            'fecha_carga_mostrar': 'Fecha y Hora Carga',
             'fecha_entrega': 'Fecha Entrega',
             'estado': 'Estado',
             'costo_material': f'Costo ({moneda})',
             'precio_venta': f'Venta ({moneda})'
-        })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
+        })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
         
         st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
     else:
@@ -703,13 +723,14 @@ elif st.session_state.seccion_activa == "Presupuestos":
             col_b_p1, col_b_p2 = st.columns(2)
             with col_b_p1:
                 if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
+                    hora_actual_str = datetime.now().strftime("%H:%M")
                     if IS_POSTGRES:
-                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :fe, :e, :cm, :pv)",
-                                        {"c": str(pres_data['cliente']), "tel": str(pres_data.get('telefono') or ''), "t": str(pres_data['tipo_trabajo']), "te": "", "fc": str(date.today()), "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)})
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv)",
+                                        {"c": str(pres_data['cliente']), "tel": str(pres_data.get('telefono') or ''), "t": str(pres_data['tipo_trabajo']), "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)})
                         run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id})
                     else:
-                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (str(pres_data['cliente']), str(pres_data.get('telefono') or ''), str(pres_data['tipo_trabajo']), "", str(date.today()), str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)))
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (str(pres_data['cliente']), str(pres_data.get('telefono') or ''), str(pres_data['tipo_trabajo']), "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)))
                         run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,))
                     st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller!")
                     st.rerun()
@@ -737,6 +758,7 @@ elif st.session_state.seccion_activa == "Presupuestos":
             pr_det, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
         )
         
+        # Vista Previa Visual
         st.markdown("### 👁️ Vista Previa del Presupuesto")
         info_emp_sub = f"{dir_empresa} | {tel_empresa}" if (dir_empresa and tel_empresa) else (dir_empresa or tel_empresa or "")
         
@@ -911,7 +933,7 @@ elif st.session_state.seccion_activa == "Boletas":
 </div>
 <div style="text-align: right;">
 <h3 style="margin: 0; color: #15803d; font-size: 17px; font-weight: 800;">BOLETA N° #{int(bol_id):04d}</h3>
-<p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {bol_data['fecha']}</p>
+<p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {bol_data['fecha']}</p>
 </div>
 </div>
 <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">
@@ -1003,7 +1025,7 @@ elif st.session_state.seccion_activa == "Clientes":
     if lista_clientes:
         cli_sel = st.selectbox("👤 Seleccionar Cliente para ver Historial y Contactar:", lista_clientes)
         
-        df_hist_trab = run_query_raw("SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
+        df_hist_trab = run_query_raw("SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
         df_hist_bol = run_query_raw("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
         
         tel_encontrado = ""
@@ -1061,7 +1083,11 @@ elif st.session_state.seccion_activa == "Clientes":
 
         st.subheader("📋 Pedidos del Cliente")
         if not df_hist_trab.empty:
-            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'telefono': 'Teléfono', 'fecha_carga': 'Fecha Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})'})[['Trabajo', 'Teléfono', 'Fecha Carga', 'Fecha Entrega', 'Estado', f'Venta ({moneda})']], use_container_width=True, hide_index=True)
+            df_hist_trab['hora_limpia'] = df_hist_trab['hora_carga'].fillna('')
+            df_hist_trab['fecha_carga_mostrar'] = df_hist_trab.apply(
+                lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
+            )
+            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'telefono': 'Teléfono', 'fecha_carga_mostrar': 'Fecha y Hora Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})'})[['Trabajo', 'Teléfono', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Venta ({moneda})']], use_container_width=True, hide_index=True)
         else:
             st.info("No hay trabajos registrados para este cliente.")
             
@@ -1246,6 +1272,7 @@ elif st.session_state.seccion_activa == "Balance":
     total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
     total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
     
+    # Egresos Totales = Compras de Insumos + Costos de Producción/Tercerizado
     total_egresos_completo = total_costos_produccion + total_compras
     ganancia_neta = total_ventas - total_egresos_completo
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
