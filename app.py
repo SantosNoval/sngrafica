@@ -145,21 +145,17 @@ def init_db_tables_cached():
                 );
             """))
             
-            # Migraciones exhaustivas para que nunca falte ninguna columna en Supabase
             columnas_migracion = [
-                # Presupuestos
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS costo_material REAL DEFAULT 0;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS telefono TEXT;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'Pendiente';",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS precio_total REAL DEFAULT 0;",
-                # Trabajos
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS presupuesto_origen_id INTEGER;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS hora_carga TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS telefono TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;",
-                # Boletas y Compras
                 "ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;",
                 "ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
                 "ALTER TABLE compras ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;"
@@ -501,8 +497,8 @@ st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px
 
 # ---------------- HERO DINÁMICO ----------------
 HERO_INFO = {
-    "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, estados de producción e imprentas externas."),
-    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo de materiales y pase reversible al taller."),
+    "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, cálculo de ganancias por trabajo y estados."),
+    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo de materiales, ganancia estimada y pase a taller."),
     "Boletas": ("Comprobantes y Boletas de Pago", "Registro de señas, saldos pendientes, alias de cobro y aviso por WhatsApp."),
     "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
     "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
@@ -521,7 +517,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS
+# VISTA 1: TRABAJOS Y PEDIDOS (CON GANANCIA)
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
@@ -683,6 +679,8 @@ if st.session_state.seccion_activa == "Trabajos":
         df_trabajos_tabla['fecha_carga_mostrar'] = df_trabajos_tabla.apply(
             lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
         )
+        # Cálculo de Ganancia Neta por trabajo
+        df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
         
         col_filtro1, col_filtro2, col_filtro3 = st.columns([1.5, 1.5, 2])
         with col_filtro1:
@@ -715,8 +713,6 @@ if st.session_state.seccion_activa == "Trabajos":
             ]
 
         # Ordenamiento dinámico
-        df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
-        
         if criterio_orden == "Fecha Entrega (Próximos primero)":
             df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_entrega", ascending=True)
         elif criterio_orden == "Fecha Carga (Más recientes)":
@@ -734,6 +730,7 @@ if st.session_state.seccion_activa == "Trabajos":
 
         df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
         
+        # Tabla con columna de Ganancia incorporada
         df_mostrar = df_trabajos_tabla.rename(columns={
             'cliente': 'Cliente',
             'telefono': 'Teléfono',
@@ -743,15 +740,16 @@ if st.session_state.seccion_activa == "Trabajos":
             'fecha_entrega': 'Fecha Entrega',
             'estado': 'Estado',
             'costo_material': f'Costo ({moneda})',
-            'precio_venta': f'Venta ({moneda})'
-        })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})']]
+            'precio_venta': f'Venta ({moneda})',
+            'ganancia_calc': f'Ganancia ({moneda})'
+        })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})', f'Ganancia ({moneda})']]
         
         st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
     else:
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
 # ==========================================
-# VISTA 2: PRESUPUESTOS (MÚLTIPLES RENGLONES Y REVERSIÓN)
+# VISTA 2: PRESUPUESTOS (CON GANANCIA ESTIMADA)
 # ==========================================
 elif st.session_state.seccion_activa == "Presupuestos":
     st.markdown("### 📄 Emisión de Presupuestos con Múltiples Renglones")
@@ -801,15 +799,20 @@ elif st.session_state.seccion_activa == "Presupuestos":
             
             total_venta_pres = float(df_pr_calc["Total_Venta"].sum())
             total_costo_pres = float(df_pr_calc["Total_Costo"].sum())
+            ganancia_estimada_pres = total_venta_pres - total_costo_pres
         else:
             total_venta_pres = 0.0
             total_costo_pres = 0.0
+            ganancia_estimada_pres = 0.0
             
-        col_tot_pr1, col_tot_pr2 = st.columns(2)
+        # Métricas del presupuesto en vivo (Costo, Venta y Ganancia)
+        col_tot_pr1, col_tot_pr2, col_tot_pr3 = st.columns(3)
         with col_tot_pr1:
-            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:8px 12px; border-radius:8px; font-weight:bold; color:#f59e0b;'>Costo Estimado Materiales: {moneda}{total_costo_pres:,.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#f59e0b;'>Costo Materiales:<br/><span style='font-size:18px;'>{moneda}{total_costo_pres:,.2f}</span></div>", unsafe_allow_html=True)
         with col_tot_pr2:
-            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:8px 12px; border-radius:8px; font-weight:bold; color:#60a5fa; text-align:right;'>PRECIO TOTAL VENTA: {moneda}{total_venta_pres:,.2f}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#60a5fa;'>Total Venta:<br/><span style='font-size:18px;'>{moneda}{total_venta_pres:,.2f}</span></div>", unsafe_allow_html=True)
+        with col_tot_pr3:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#10b981;'>Ganancia Estimada:<br/><span style='font-size:18px;'>{moneda}{ganancia_estimada_pres:,.2f}</span></div>", unsafe_allow_html=True)
             
         st.write("")
         if st.button("💾 Guardar Presupuesto Completo", type="primary", use_container_width=True):
@@ -865,7 +868,7 @@ elif st.session_state.seccion_activa == "Presupuestos":
     
     if not df_presupuestos.empty:
         opciones_pres = {
-            f"Presupuesto #{int(row['id'])} - {row['cliente']} ({moneda}{float(row['precio_total'] or 0):,.0f})": int(row['id'])
+            f"Presupuesto #{int(row['id'])} - {row['cliente']} (Total: {moneda}{float(row['precio_total'] or 0):,.0f} | Ganancia: {moneda}{(float(row['precio_total'] or 0) - float(row['costo_material'] or 0)):,.0f})": int(row['id'])
             for _, row in df_presupuestos.iterrows()
         }
         
@@ -874,6 +877,16 @@ elif st.session_state.seccion_activa == "Presupuestos":
             pres_id = opciones_pres[pres_sel]
             pres_data = df_presupuestos[df_presupuestos['id'] == pres_id].iloc[0]
             
+            pv_pres_sel = float(pres_data.get('precio_total') or 0.0)
+            cm_pres_sel = float(pres_data.get('costo_material') or 0.0)
+            gan_pres_sel = pv_pres_sel - cm_pres_sel
+            
+            col_k_p1, col_k_p2, col_k_p3 = st.columns(3)
+            col_k_p1.metric("Costo de Materiales", f"{moneda}{cm_pres_sel:,.2f}")
+            col_k_p2.metric("Total Cotizado", f"{moneda}{pv_pres_sel:,.2f}")
+            col_k_p3.metric("Ganancia Neta Estimada", f"{moneda}{gan_pres_sel:,.2f}", delta=f"{moneda}{gan_pres_sel:,.2f}")
+            
+            st.write("")
             col_b_p1, col_b_p2 = st.columns(2)
             with col_b_p1:
                 if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
@@ -884,18 +897,16 @@ elif st.session_state.seccion_activa == "Presupuestos":
                     if not resumen_trabajo.strip():
                         resumen_trabajo = str(pres_data.get('tipo_trabajo') or 'Trabajo Gráfico')
                         
-                    pv_tot = float(pres_data.get('precio_total') or 0.0)
-                    cm_tot = float(pres_data.get('costo_material') or 0.0)
                     cli_nombre = str(pres_data['cliente'])
                     cli_tel = str(pres_data.get('telefono') or '')
                     
                     if IS_POSTGRES:
                         run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, presupuesto_origen_id) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv, :pid)",
-                                        {"c": cli_nombre, "tel": cli_tel, "t": resumen_trabajo, "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": cm_tot, "pv": pv_tot, "pid": int(pres_id)})
+                                        {"c": cli_nombre, "tel": cli_tel, "t": resumen_trabajo, "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": cm_pres_sel, "pv": pv_pres_sel, "pid": int(pres_id)})
                         run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id})
                     else:
                         run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, presupuesto_origen_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (cli_nombre, cli_tel, resumen_trabajo, "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", cm_tot, pv_tot, int(pres_id)))
+                                        (cli_nombre, cli_tel, resumen_trabajo, "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", cm_pres_sel, pv_pres_sel, int(pres_id)))
                         run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,))
                     st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller y archivado!")
                     st.rerun()
