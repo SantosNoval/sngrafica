@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ---------------- CONEXIÓN A BASE DE DATOS ----------------
+# ---------------- CONEXIÓN A BASE DE DATOS ULTRA RÁPIDA ----------------
 DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else None
 
 @st.cache_resource
@@ -29,7 +29,13 @@ def get_db_engine(url):
         return None
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    return create_engine(url, pool_size=5, max_overflow=10, pool_pre_ping=True, pool_recycle=300)
+    return create_engine(
+        url,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+        pool_recycle=600
+    )
 
 if DB_URL:
     engine = get_db_engine(DB_URL)
@@ -64,12 +70,13 @@ def run_execute_raw(query, params=()):
         conn.close()
     st.cache_data.clear()
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_data_cached(query, params_tuple=()):
     return run_query_raw(query, params_tuple)
 
-# ---------------- INICIALIZACIÓN Y MIGRACIÓN INMEDIATA ----------------
-def ensure_schema_migrated():
+# ---------------- INICIALIZACIÓN ÚNICA EN CACHÉ (0 LATENCIA) ----------------
+@st.cache_resource
+def init_db_tables_cached():
     if IS_POSTGRES and engine:
         with engine.connect() as conn:
             conn.execute(text("""
@@ -137,23 +144,17 @@ def ensure_schema_migrated():
                     nombre TEXT UNIQUE
                 );
             """))
-            # Migraciones directas para columnas nuevas en Supabase
-            columnas_trabajos = [
+            for col_sql in [
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS presupuesto_origen_id INTEGER;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS hora_carga TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS telefono TEXT;",
-                "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;"
-            ]
-            for col_sql in columnas_trabajos:
+                "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;",
+                "ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;",
+                "ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
+                "ALTER TABLE compras ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;"
+            ]:
                 try: conn.execute(text(col_sql))
                 except Exception: pass
-                
-            try: conn.execute(text("ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;"))
-            except Exception: pass
-            try: conn.execute(text("ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;"))
-            except Exception: pass
-            try: conn.execute(text("ALTER TABLE compras ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;"))
-            except Exception: pass
             conn.commit()
     else:
         conn = sqlite3.connect(DB_NAME)
@@ -165,20 +166,17 @@ def ensure_schema_migrated():
         cursor.execute("CREATE TABLE IF NOT EXISTS insumos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, unidad TEXT, costo_unitario REAL, multiplicador_sugerido REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS tipos_trabajo (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE)")
-        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN presupuesto_origen_id INTEGER")
-        except Exception: pass
-        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN hora_carga TEXT")
-        except Exception: pass
-        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN telefono TEXT")
-        except Exception: pass
-        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN taller_externo TEXT")
-        except Exception: pass
-        try: cursor.execute("ALTER TABLE boletas ADD COLUMN metodo_pago TEXT")
-        except Exception: pass
-        try: cursor.execute("ALTER TABLE compras ADD COLUMN cantidad REAL DEFAULT 1")
-        except Exception: pass
-        try: cursor.execute("ALTER TABLE compras ADD COLUMN precio_unitario REAL DEFAULT 0")
-        except Exception: pass
+        for col_sq3 in [
+            "ALTER TABLE trabajos ADD COLUMN presupuesto_origen_id INTEGER",
+            "ALTER TABLE trabajos ADD COLUMN hora_carga TEXT",
+            "ALTER TABLE trabajos ADD COLUMN telefono TEXT",
+            "ALTER TABLE trabajos ADD COLUMN taller_externo TEXT",
+            "ALTER TABLE boletas ADD COLUMN metodo_pago TEXT",
+            "ALTER TABLE compras ADD COLUMN cantidad REAL DEFAULT 1",
+            "ALTER TABLE compras ADD COLUMN precio_unitario REAL DEFAULT 0"
+        ]:
+            try: cursor.execute(col_sq3)
+            except Exception: pass
         conn.commit()
         conn.close()
 
@@ -210,10 +208,11 @@ def ensure_schema_migrated():
                 conn.commit()
         else:
             run_execute_raw("INSERT OR IGNORE INTO tipos_trabajo (nombre) VALUES (?)", (tipo,))
+    return True
 
-ensure_schema_migrated()
+init_db_tables_cached()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_all_configs():
     try:
         df = fetch_data_cached("SELECT clave, valor FROM configuracion")
@@ -235,7 +234,7 @@ cbu_banco = config_map.get("cbu_bancario", "")
 titular_banco = config_map.get("titular_cuenta", "SN Grafica")
 msg_wsp_template = config_map.get("mensaje_wsp_custom", "Hola, Tu pedido {trabajo} está listo! el total es ${total} Gracias!")
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_tipos_trabajo_cached():
     try:
         df = fetch_data_cached("SELECT nombre FROM tipos_trabajo ORDER BY nombre ASC")
@@ -606,7 +605,6 @@ if st.session_state.seccion_activa == "Trabajos":
 
     with col_t_act2:
         with st.expander("↩️ Devolver a Presupuesto", expanded=False):
-            # Opciones de reversión desde trabajos
             df_con_origen = df_todos_trabajos[df_todos_trabajos['presupuesto_origen_id'].notna() & (df_todos_trabajos['presupuesto_origen_id'] > 0)]
             if not df_con_origen.empty:
                 opc_devolver = {
@@ -699,7 +697,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
-        # Ordenamiento dinámico teniendo en cuenta fecha, hora e id
+        # Ordenamiento dinámico
         df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
         
         if criterio_orden == "Fecha Entrega (Próximos primero)":
@@ -819,7 +817,7 @@ elif st.session_state.seccion_activa == "Presupuestos":
                                     {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": detalle_guardado, "cant": cant_total_items, "pu": total_venta_pres, "pt": total_venta_pres, "cm": total_costo_pres, "e": "Pendiente"})
                 else:
                     run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, detalle_guardado, cant_total_items, total_venta_pres, total_venta_pres, total_costo_pres, "Pendiente"))
+                                    (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, detalle_guardado, cant_total_items, total_venta_pres, total_venta_pres, total_costo_pres, "Pendiente"))
                 st.success("¡Presupuesto guardado con éxito!")
                 st.session_state.df_items_presupuesto = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0}])
                 st.rerun()
@@ -1423,7 +1421,7 @@ elif st.session_state.seccion_activa == "Compras":
         st.info("Todavía no hay compras cargadas.")
 
 # ==========================================
-# VISTA 7: BALANCE Y FINANZAS (INGRESOS vs GASTOS COMPLETOS)
+# VISTA 7: BALANCE Y FINANZAS
 # ==========================================
 elif st.session_state.seccion_activa == "Balance":
     df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas, SUM(costo_material) as total_costos_prod FROM trabajos")
@@ -1433,7 +1431,6 @@ elif st.session_state.seccion_activa == "Balance":
     total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
     total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
     
-    # Egresos Totales = Compras de Insumos + Costos de Producción/Tercerizado
     total_egresos_completo = total_costos_produccion + total_compras
     ganancia_neta = total_ventas - total_egresos_completo
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
