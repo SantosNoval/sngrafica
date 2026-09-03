@@ -74,7 +74,7 @@ def run_execute_raw(query, params=()):
 def fetch_data_cached(query, params_tuple=()):
     return run_query_raw(query, params_tuple)
 
-# ---------------- INICIALIZACIÓN ÚNICA EN CACHÉ (0 LATENCIA) ----------------
+# ---------------- INICIALIZACIÓN Y MIGRACIONES COMPLETAS ----------------
 @st.cache_resource
 def init_db_tables_cached():
     if IS_POSTGRES and engine:
@@ -144,15 +144,27 @@ def init_db_tables_cached():
                     nombre TEXT UNIQUE
                 );
             """))
-            for col_sql in [
+            
+            # Migraciones exhaustivas para que nunca falte ninguna columna en Supabase
+            columnas_migracion = [
+                # Presupuestos
+                "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS costo_material REAL DEFAULT 0;",
+                "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS telefono TEXT;",
+                "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'Pendiente';",
+                "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
+                "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;",
+                "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS precio_total REAL DEFAULT 0;",
+                # Trabajos
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS presupuesto_origen_id INTEGER;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS hora_carga TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS telefono TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;",
+                # Boletas y Compras
                 "ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;",
                 "ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
                 "ALTER TABLE compras ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;"
-            ]:
+            ]
+            for col_sql in columnas_migracion:
                 try: conn.execute(text(col_sql))
                 except Exception: pass
             conn.commit()
@@ -166,7 +178,11 @@ def init_db_tables_cached():
         cursor.execute("CREATE TABLE IF NOT EXISTS insumos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, unidad TEXT, costo_unitario REAL, multiplicador_sugerido REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS tipos_trabajo (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE)")
-        for col_sq3 in [
+        
+        columnas_sqlite = [
+            "ALTER TABLE presupuestos ADD COLUMN costo_material REAL DEFAULT 0",
+            "ALTER TABLE presupuestos ADD COLUMN telefono TEXT",
+            "ALTER TABLE presupuestos ADD COLUMN estado TEXT DEFAULT 'Pendiente'",
             "ALTER TABLE trabajos ADD COLUMN presupuesto_origen_id INTEGER",
             "ALTER TABLE trabajos ADD COLUMN hora_carga TEXT",
             "ALTER TABLE trabajos ADD COLUMN telefono TEXT",
@@ -174,8 +190,9 @@ def init_db_tables_cached():
             "ALTER TABLE boletas ADD COLUMN metodo_pago TEXT",
             "ALTER TABLE compras ADD COLUMN cantidad REAL DEFAULT 1",
             "ALTER TABLE compras ADD COLUMN precio_unitario REAL DEFAULT 0"
-        ]:
-            try: cursor.execute(col_sq3)
+        ]
+        for col_sq in columnas_sqlite:
+            try: cursor.execute(col_sq)
             except Exception: pass
         conn.commit()
         conn.close()
@@ -541,10 +558,10 @@ if st.session_state.seccion_activa == "Trabajos":
                     hora_actual_str = datetime.now().strftime("%H:%M")
                     if IS_POSTGRES:
                         run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv)",
-                                        {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": nuevo_fcarga, "hc": hora_actual_str, "fe": nuevo_fentrega, "e": nuevo_est, "cm": nuevo_costo, "pv": nuevo_precio})
+                                        {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": str(nuevo_fcarga), "hc": hora_actual_str, "fe": str(nuevo_fentrega), "e": nuevo_est, "cm": float(nuevo_costo), "pv": float(nuevo_precio)})
                     else:
                         run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), nuevo_fcarga, hora_actual_str, nuevo_fentrega, nuevo_est, nuevo_costo, nuevo_precio))
+                                        (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), str(nuevo_fcarga), hora_actual_str, str(nuevo_fentrega), nuevo_est, float(nuevo_costo), float(nuevo_precio)))
                     st.success("¡Trabajo guardado con éxito!")
                     st.rerun()
                 else:
@@ -596,10 +613,10 @@ if st.session_state.seccion_activa == "Trabajos":
                         if ed_cliente.strip() and ed_trabajo.strip() and ed_precio > 0:
                             if IS_POSTGRES:
                                 run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, hora_carga=:hc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv WHERE id=:id",
-                                                {"c": ed_cliente.strip(), "tel": ed_tel.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": ed_fc, "hc": ed_hc.strip(), "fe": ed_fe, "e": ed_estado, "cm": ed_costo, "pv": ed_precio, "id": id_mod})
+                                                {"c": ed_cliente.strip(), "tel": ed_tel.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": str(ed_fc), "hc": ed_hc.strip(), "fe": str(ed_fe), "e": ed_estado, "cm": float(ed_costo), "pv": float(ed_precio), "id": id_mod})
                             else:
                                 run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, hora_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=? WHERE id=?",
-                                                (ed_cliente.strip(), ed_tel.strip(), ed_trabajo.strip(), ed_taller.strip(), ed_fc, ed_hc.strip(), ed_fe, ed_estado, ed_costo, ed_precio, id_mod))
+                                                (ed_cliente.strip(), ed_tel.strip(), ed_trabajo.strip(), ed_taller.strip(), str(ed_fc), ed_hc.strip(), str(ed_fe), ed_estado, float(ed_costo), float(ed_precio), id_mod))
                             st.success("¡Trabajo actualizado!")
                             st.rerun()
 
@@ -782,8 +799,8 @@ elif st.session_state.seccion_activa == "Presupuestos":
             df_pr_calc["Total_Venta"] = df_pr_calc["Cantidad"] * df_pr_calc["Precio Unitario"]
             df_pr_calc["Total_Costo"] = df_pr_calc["Cantidad"] * df_pr_calc["Costo Material"]
             
-            total_venta_pres = df_pr_calc["Total_Venta"].sum()
-            total_costo_pres = df_pr_calc["Total_Costo"].sum()
+            total_venta_pres = float(df_pr_calc["Total_Venta"].sum())
+            total_costo_pres = float(df_pr_calc["Total_Costo"].sum())
         else:
             total_venta_pres = 0.0
             total_costo_pres = 0.0
@@ -810,11 +827,11 @@ elif st.session_state.seccion_activa == "Presupuestos":
                         "costo_material": float(r_it["Costo Material"])
                     })
                 detalle_guardado = json.dumps(lista_items_json)
-                cant_total_items = df_pr_calc["Cantidad"].sum()
+                cant_total_items = float(df_pr_calc["Cantidad"].sum())
                 
                 if IS_POSTGRES:
-                    run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
-                                    {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": detalle_guardado, "cant": cant_total_items, "pu": total_venta_pres, "pt": total_venta_pres, "cm": total_costo_pres, "e": "Pendiente"})
+                    run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :tel, :tt, :d, :cant, :pu, :pt, :cm, :e)",
+                                    {"f": str(pr_fecha), "c": pr_cliente.strip(), "tel": pr_telefono.strip(), "tt": pr_tipo, "d": detalle_guardado, "cant": cant_total_items, "pu": total_venta_pres, "pt": total_venta_pres, "cm": total_costo_pres, "e": "Pendiente"})
                 else:
                     run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                     (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, detalle_guardado, cant_total_items, total_venta_pres, total_venta_pres, total_costo_pres, "Pendiente"))
@@ -1025,10 +1042,10 @@ elif st.session_state.seccion_activa == "Boletas":
                     saldo_calc = b_total - b_sena
                     if IS_POSTGRES:
                         run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
-                                        {"f": b_fecha, "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "m": b_metodo, "tot": b_total, "s": b_sena, "sal": saldo_calc})
+                                        {"f": str(b_fecha), "c": b_cliente.strip(), "t": b_telefono.strip(), "d": b_detalle.strip(), "m": b_metodo, "tot": float(b_total), "s": float(b_sena), "sal": float(saldo_calc)})
                     else:
                         run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_metodo, b_total, b_sena, saldo_calc))
+                                        (str(b_fecha), b_cliente.strip(), b_telefono.strip(), b_detalle.strip(), b_metodo, float(b_total), float(b_sena), float(saldo_calc)))
                     st.success("¡Boleta generada con éxito!")
                     st.rerun()
 
@@ -1278,10 +1295,10 @@ elif st.session_state.seccion_activa == "Insumos":
                     try:
                         if IS_POSTGRES:
                             run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (:n, :u, :c, :m)",
-                                            {"n": in_nombre.strip(), "u": in_unidad, "c": in_costo, "m": in_multi})
+                                            {"n": in_nombre.strip(), "u": in_unidad, "c": float(in_costo), "m": float(in_multi)})
                         else:
                             run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (?, ?, ?, ?)",
-                                            (in_nombre.strip(), in_unidad, in_costo, in_multi))
+                                            (in_nombre.strip(), in_unidad, float(in_costo), float(in_multi)))
                         st.success("¡Insumo guardado correctamente!")
                         st.rerun()
                     except Exception:
@@ -1371,10 +1388,10 @@ elif st.session_state.seccion_activa == "Compras":
                     if det_txt:
                         if IS_POSTGRES:
                             run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (:f, :p, :fe, :pr, :ca, :pu, :c)",
-                                            {"f": fact_input.strip(), "p": prov_input.strip(), "fe": fecha_input, "pr": det_txt, "ca": cant_val, "pu": pu_val, "c": tot_renglon})
+                                            {"f": fact_input.strip(), "p": prov_input.strip(), "fe": str(fecha_input), "pr": det_txt, "ca": cant_val, "pu": pu_val, "c": tot_renglon})
                         else:
                             run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                            (fact_input.strip(), prov_input.strip(), fecha_input, det_txt, cant_val, pu_val, tot_renglon))
+                                            (fact_input.strip(), prov_input.strip(), str(fecha_input), det_txt, cant_val, pu_val, tot_renglon))
                 st.success("¡Factura e ítems guardados con éxito!")
                 st.session_state.df_items_compra = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}])
                 st.rerun()
