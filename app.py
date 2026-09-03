@@ -95,7 +95,8 @@ def init_db_tables():
                     taller_externo TEXT,
                     estado TEXT,
                     costo_material REAL,
-                    precio_venta REAL
+                    precio_venta REAL,
+                    presupuesto_origen_id INTEGER
                 );
                 CREATE TABLE IF NOT EXISTS presupuestos (
                     id SERIAL PRIMARY KEY,
@@ -143,6 +144,8 @@ def init_db_tables():
             except Exception: pass
             try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;"))
             except Exception: pass
+            try: conn.execute(text("ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS presupuesto_origen_id INTEGER;"))
+            except Exception: pass
             try: conn.execute(text("ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;"))
             except Exception: pass
             try: conn.execute(text("ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;"))
@@ -154,7 +157,7 @@ def init_db_tables():
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS compras (id INTEGER PRIMARY KEY AUTOINCREMENT, factura TEXT, proveedor TEXT, fecha DATE, producto TEXT, cantidad REAL DEFAULT 1, precio_unitario REAL DEFAULT 0, costo REAL)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, hora_carga TEXT, fecha_entrega DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, taller_externo TEXT, estado TEXT, costo_material REAL, precio_venta REAL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS trabajos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_carga DATE, hora_carga TEXT, fecha_entrega DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, taller_externo TEXT, estado TEXT, costo_material REAL, precio_venta REAL, presupuesto_origen_id INTEGER)")
         cursor.execute("CREATE TABLE IF NOT EXISTS presupuestos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, tipo_trabajo TEXT, detalle TEXT, cantidad REAL, precio_unitario REAL, precio_total REAL, costo_material REAL, estado TEXT)")
         cursor.execute("CREATE TABLE IF NOT EXISTS boletas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha DATE, cliente TEXT, telefono TEXT, detalle TEXT, metodo_pago TEXT, total REAL, sena REAL, saldo REAL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS insumos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, unidad TEXT, costo_unitario REAL, multiplicador_sugerido REAL)")
@@ -165,6 +168,8 @@ def init_db_tables():
         try: cursor.execute("ALTER TABLE trabajos ADD COLUMN telefono TEXT")
         except Exception: pass
         try: cursor.execute("ALTER TABLE trabajos ADD COLUMN taller_externo TEXT")
+        except Exception: pass
+        try: cursor.execute("ALTER TABLE trabajos ADD COLUMN presupuesto_origen_id INTEGER")
         except Exception: pass
         try: cursor.execute("ALTER TABLE boletas ADD COLUMN metodo_pago TEXT")
         except Exception: pass
@@ -327,7 +332,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- GENERACIÓN DE PDF ----------------
+# ---------------- FUNCIONES AUXILIARES Y PDF ----------------
 def parse_presupuesto_items(detalle_raw, default_cant=1.0, default_pu=0.0):
     try:
         items = json.loads(detalle_raw)
@@ -480,7 +485,7 @@ st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px
 # ---------------- HERO DINÁMICO ----------------
 HERO_INFO = {
     "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, estados de producción e imprentas externas."),
-    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo automático de materiales y pase directo al taller."),
+    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo de materiales y pase reversible al taller."),
     "Boletas": ("Comprobantes y Boletas de Pago", "Registro de señas, saldos pendientes, alias de cobro y aviso por WhatsApp."),
     "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
     "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
@@ -499,11 +504,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS (CON FECHA Y HORA)
+# VISTA 1: TRABAJOS Y PEDIDOS (CON FECHA, HORA Y DESHACER PASE)
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
-        SELECT id, cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta 
+        SELECT id, cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, presupuesto_origen_id 
         FROM trabajos 
         ORDER BY fecha_entrega ASC, id DESC
     """)
@@ -545,7 +550,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 else:
                     st.error("Completá cliente, trabajo y precio de venta.")
 
-    col_t_act1, col_t_act2 = st.columns(2)
+    col_t_act1, col_t_act2, col_t_act3 = st.columns(3)
     with col_t_act1:
         with st.expander("✏️ Modificar Trabajo", expanded=False):
             if not df_todos_trabajos.empty:
@@ -599,6 +604,33 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.rerun()
 
     with col_t_act2:
+        with st.expander("↩️ Devolver a Presupuesto", expanded=False):
+            # Filtrar trabajos que provienen de un presupuesto
+            df_con_origen = df_todos_trabajos[df_todos_trabajos['presupuesto_origen_id'].notna() & (df_todos_trabajos['presupuesto_origen_id'] > 0)]
+            if not df_con_origen.empty:
+                opc_devolver = {
+                    f"#{row['id']} - {row['cliente']} (Presupuesto #{int(row['presupuesto_origen_id'])})": row
+                    for _, row in df_con_origen.iterrows()
+                }
+                sel_dev = st.selectbox("Elegí el trabajo para regresar a Presupuestos:", list(opc_devolver.keys()), key="sel_dev_trab")
+                r_dev = opc_devolver[sel_dev]
+                id_trab_dev = r_dev['id']
+                id_pres_dev = int(r_dev['presupuesto_origen_id'])
+                
+                st.write("")
+                if st.button("↩️ Confirmar y Devolver", type="primary", use_container_width=True, key="btn_confirm_dev"):
+                    if IS_POSTGRES:
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :pid", {"pid": id_pres_dev})
+                        run_execute_raw("DELETE FROM trabajos WHERE id = :tid", {"tid": id_trab_dev})
+                    else:
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = ?", (id_pres_dev,))
+                        run_execute_raw("DELETE FROM trabajos WHERE id = ?", (id_trab_dev,))
+                    st.success(f"Trabajo #{id_trab_dev} devuelto a Presupuesto #{id_pres_dev} como Pendiente.")
+                    st.rerun()
+            else:
+                st.caption("No hay trabajos originados desde presupuestos para devolver.")
+
+    with col_t_act3:
         with st.expander("🗑️ Borrar Trabajo", expanded=False):
             if not df_todos_trabajos.empty:
                 opciones_borrar = {
@@ -654,9 +686,11 @@ if st.session_state.seccion_activa == "Trabajos":
         with col_filtro3:
             busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
+        # Filtro por estado
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
             
+        # Filtro por búsqueda
         if busq_trabajo:
             df_trabajos_tabla = df_trabajos_tabla[
                 df_trabajos_tabla['cliente'].str.contains(busq_trabajo, case=False, na=False) |
@@ -664,6 +698,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
+        # Ordenamiento dinámico teniendo en cuenta fecha, hora e id
         df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
         
         if criterio_orden == "Fecha Entrega (Próximos primero)":
@@ -700,7 +735,7 @@ if st.session_state.seccion_activa == "Trabajos":
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
 # ==========================================
-# VISTA 2: PRESUPUESTOS (MÚLTIPLES RENGLONES Y PASE DIRECTO)
+# VISTA 2: PRESUPUESTOS (MÚLTIPLES RENGLONES Y REVERSIÓN)
 # ==========================================
 elif st.session_state.seccion_activa == "Presupuestos":
     st.markdown("### 📄 Emisión de Presupuestos con Múltiples Renglones")
@@ -789,6 +824,29 @@ elif st.session_state.seccion_activa == "Presupuestos":
                 st.session_state.df_items_presupuesto = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0}])
                 st.rerun()
 
+    # Opciones de reversión rápida
+    df_presupuestos_aprobados = fetch_data_cached("SELECT * FROM presupuestos WHERE estado = 'Aprobado' ORDER BY id DESC")
+    if not df_presupuestos_aprobados.empty:
+        with st.expander("↩️ Deshacer pase a taller (Revertir por error)", expanded=False):
+            st.caption("Si pasaste un presupuesto a taller por error, podés devolverlo aquí. Se cancelará el trabajo creado en taller y volverá a estar pendiente.")
+            opciones_rev = {
+                f"Presupuesto #{int(row['id'])} - {row['cliente']} ({moneda}{float(row['precio_total'] or 0):,.0f})": int(row['id'])
+                for _, row in df_presupuestos_aprobados.iterrows()
+            }
+            sel_rev_id = st.selectbox("Elegí el presupuesto a recuperar:", list(opciones_rev.keys()), key="sel_rev_pres")
+            pres_id_rev = opciones_rev[sel_rev_id]
+            
+            if st.button("↩️ Devolver a Presupuesto Pendiente", type="primary", use_container_width=True, key="btn_rev_pres_confirm"):
+                if IS_POSTGRES:
+                    run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :id", {"id": pres_id_rev})
+                    run_execute_raw("DELETE FROM trabajos WHERE presupuesto_origen_id = :id", {"id": pres_id_rev})
+                else:
+                    run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = ?", (pres_id_rev,))
+                    run_execute_raw("DELETE FROM trabajos WHERE presupuesto_origen_id = ?", (pres_id_rev,))
+                st.success(f"¡Presupuesto #{pres_id_rev} devuelto a la lista de pendientes!")
+                st.rerun()
+
+    # Solo mostramos los presupuestos Pendientes
     df_presupuestos = fetch_data_cached("SELECT * FROM presupuestos WHERE estado = 'Pendiente' ORDER BY id DESC")
     
     if not df_presupuestos.empty:
@@ -804,11 +862,10 @@ elif st.session_state.seccion_activa == "Presupuestos":
             
             col_b_p1, col_b_p2 = st.columns(2)
             with col_b_p1:
-                # Pasar a taller y borrar de presupuestos
+                # Pasar a taller guardando el ID de origen para poder deshacer si hace falta
                 if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
                     hora_actual_str = datetime.now().strftime("%H:%M")
                     
-                    # Extraer resumen de texto de los trabajos
                     items_parsed = parse_presupuesto_items(pres_data.get('detalle'))
                     resumen_trabajo = ", ".join([f"{it['cantidad']:g}x {it['detalle']}" for it in items_parsed])
                     if not resumen_trabajo.strip():
@@ -820,15 +877,14 @@ elif st.session_state.seccion_activa == "Presupuestos":
                     cli_tel = str(pres_data.get('telefono') or '')
                     
                     if IS_POSTGRES:
-                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv)",
-                                        {"c": cli_nombre, "tel": cli_tel, "t": resumen_trabajo, "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": cm_tot, "pv": pv_tot})
-                        # Se borra de presupuestos
-                        run_execute_raw("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id})
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, presupuesto_origen_id) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv, :pid)",
+                                        {"c": cli_nombre, "tel": cli_tel, "t": resumen_trabajo, "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": cm_tot, "pv": pv_tot, "pid": int(pres_id)})
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id})
                     else:
-                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (cli_nombre, cli_tel, resumen_trabajo, "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", cm_tot, pv_tot))
-                        run_execute_raw("DELETE FROM presupuestos WHERE id = ?", (pres_id,))
-                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller y removido de presupuestos pendientes!")
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, presupuesto_origen_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (cli_nombre, cli_tel, resumen_trabajo, "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", cm_tot, pv_tot, int(pres_id)))
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,))
+                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller y archivado!")
                     st.rerun()
             
             with col_b_p2:
@@ -856,7 +912,6 @@ elif st.session_state.seccion_activa == "Presupuestos":
             pr_det_raw, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
         )
         
-        # Vista Previa Visual con Múltiples Renglones
         st.markdown("### 👁️ Vista Previa del Presupuesto")
         info_emp_sub = f"{dir_empresa} | {tel_empresa}" if (dir_empresa and tel_empresa) else (dir_empresa or tel_empresa or "")
         
