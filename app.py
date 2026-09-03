@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date, datetime
 import plotly.express as px
 import io
+import json
 import urllib.parse
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -327,7 +328,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------- GENERACIÓN DE PDF ----------------
-def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detalle, cant, unitario, total, pie_txt_custom):
+def parse_presupuesto_items(detalle_raw, default_cant=1.0, default_pu=0.0):
+    try:
+        items = json.loads(detalle_raw)
+        if isinstance(items, list) and len(items) > 0:
+            return items
+    except Exception:
+        pass
+    return [{"detalle": str(detalle_raw), "cantidad": default_cant, "precio_unitario": default_pu, "costo_material": 0.0}]
+
+def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detalle_raw, cant_fallback, unitario_fallback, total, pie_txt_custom):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
@@ -345,19 +355,39 @@ def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detal
     
     client_data = [
         [Paragraph("<b>Cliente:</b>", bold_style), Paragraph(str(cliente), normal_style), Paragraph("<b>Teléfono:</b>", bold_style), Paragraph(str(telefono), normal_style)],
-        [Paragraph("<b>Tipo de Trabajo:</b>", bold_style), Paragraph(str(tipo), normal_style), Paragraph("", normal_style), Paragraph("", normal_style)]
+        [Paragraph("<b>Rubro / Tipo:</b>", bold_style), Paragraph(str(tipo), normal_style), Paragraph("", normal_style), Paragraph("", normal_style)]
     ]
     t_client = Table(client_data, colWidths=[90, 200, 70, 180])
     t_client.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f8fafc")), ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")), ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5)]))
     elements.append(t_client)
     elements.append(Spacer(1, 14))
     
-    items_data = [
-        [Paragraph("<b>Detalle / Especificaciones</b>", bold_style), Paragraph("<b>Cant.</b>", bold_style), Paragraph("<b>P. Unitario</b>", bold_style), Paragraph("<b>Total</b>", bold_style)],
-        [Paragraph(str(detalle), normal_style), Paragraph(f"{cant:,.0f}", normal_style), Paragraph(f"{moneda}{unitario:,.2f}", normal_style), Paragraph(f"{moneda}{total:,.2f}", bold_style)]
-    ]
+    items = parse_presupuesto_items(detalle_raw, cant_fallback, unitario_fallback)
+    items_data = [[Paragraph("<b>Detalle / Especificaciones</b>", bold_style), Paragraph("<b>Cant.</b>", bold_style), Paragraph("<b>P. Unitario</b>", bold_style), Paragraph("<b>Total</b>", bold_style)]]
+    
+    for it in items:
+        d_name = str(it.get("detalle", ""))
+        c_val = float(it.get("cantidad", 1.0))
+        pu_val = float(it.get("precio_unitario", 0.0))
+        row_tot = c_val * pu_val
+        items_data.append([
+            Paragraph(d_name, normal_style),
+            Paragraph(f"{c_val:,.0f}", normal_style),
+            Paragraph(f"{moneda}{pu_val:,.2f}", normal_style),
+            Paragraph(f"{moneda}{row_tot:,.2f}", bold_style)
+        ])
+        
     t_items = Table(items_data, colWidths=[280, 60, 100, 100])
-    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e3a8a")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'CENTER'), ('ALIGN', (2,0), (-1,-1), 'RIGHT'), ('ALIGN', (3,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
+    t_items.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e3a8a")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
+        ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6)
+    ]))
     elements.append(t_items)
     elements.append(Spacer(1, 14))
     
@@ -450,7 +480,7 @@ st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px
 # ---------------- HERO DINÁMICO ----------------
 HERO_INFO = {
     "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, estados de producción e imprentas externas."),
-    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones directas con cálculo automático de materiales y exportación PDF."),
+    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo automático de materiales y pase directo al taller."),
     "Boletas": ("Comprobantes y Boletas de Pago", "Registro de señas, saldos pendientes, alias de cobro y aviso por WhatsApp."),
     "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
     "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
@@ -601,7 +631,6 @@ if st.session_state.seccion_activa == "Trabajos":
     if not df_todos_trabajos.empty:
         df_trabajos_tabla = df_todos_trabajos.copy()
         
-        # Formato de Fecha de Carga que incluye la Hora
         df_trabajos_tabla['hora_limpia'] = df_trabajos_tabla['hora_carga'].fillna('')
         df_trabajos_tabla['fecha_carga_mostrar'] = df_trabajos_tabla.apply(
             lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
@@ -625,11 +654,9 @@ if st.session_state.seccion_activa == "Trabajos":
         with col_filtro3:
             busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
-        # Filtro por estado
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
             
-        # Filtro por búsqueda
         if busq_trabajo:
             df_trabajos_tabla = df_trabajos_tabla[
                 df_trabajos_tabla['cliente'].str.contains(busq_trabajo, case=False, na=False) |
@@ -637,7 +664,6 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
-        # Ordenamiento dinámico teniendo en cuenta fecha, hora e id
         df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0) - df_trabajos_tabla['costo_material'].fillna(0)
         
         if criterio_orden == "Fecha Entrega (Próximos primero)":
@@ -674,40 +700,96 @@ if st.session_state.seccion_activa == "Trabajos":
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
 # ==========================================
-# VISTA 2: PRESUPUESTOS (VISTA PREVIA VISUAL LIMPIA)
+# VISTA 2: PRESUPUESTOS (MÚLTIPLES RENGLONES Y PASE DIRECTO)
 # ==========================================
 elif st.session_state.seccion_activa == "Presupuestos":
+    st.markdown("### 📄 Emisión de Presupuestos con Múltiples Renglones")
+    
     with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
-        with st.form("form_nuevo_presupuesto_detallado", clear_on_submit=True):
-            pr_cliente = st.text_input("Cliente *")
-            pr_fecha = st.date_input("Fecha", value=date.today())
-            pr_telefono = st.text_input("Teléfono / WhatsApp")
-            pr_tipo = st.selectbox("Tipo de Trabajo / Rubro", tipos_actuales, key="pr_tipo_sel")
-            pr_detalle = st.text_area("Detalle / Especificaciones del trabajo *")
+        col_pr1, col_pr2, col_pr3 = st.columns(3)
+        with col_pr1:
+            pr_cliente = st.text_input("Nombre del Cliente *", key="pr_cli_input")
+        with col_pr2:
+            pr_telefono = st.text_input("Teléfono / WhatsApp", key="pr_tel_input")
+        with col_pr3:
+            pr_fecha = st.date_input("Fecha del Presupuesto", value=date.today(), key="pr_fec_input")
             
-            col_c1, col_c2, col_c3 = st.columns(3)
-            with col_c1:
-                pr_cant = st.number_input("Cantidad", min_value=1.0, value=1.0, step=1.0)
-            with col_c2:
-                pr_unitario = st.number_input(f"Precio Unitario ({moneda}) *", min_value=0.0, step=100.0)
-            with col_c3:
-                pr_costo_mat = st.number_input(f"Costo Estimado Material ({moneda})", min_value=0.0, step=100.0)
+        pr_tipo = st.selectbox("Rubro Principal", tipos_actuales, key="pr_tipo_sel")
+        
+        st.markdown("**Ítems / Renglones del Presupuesto:**")
+        st.caption("Completá detalle, cantidad, precio unitario y costo. Agregá más renglones con el botón `+`.")
+        
+        if "df_items_presupuesto" not in st.session_state:
+            st.session_state.df_items_presupuesto = pd.DataFrame([
+                {"Detalle": "Cartel Frontlight 2x1m", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0},
+                {"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0}
+            ])
             
-            btn_crear_pres = st.form_submit_button("💾 Guardar Presupuesto", use_container_width=True)
+        edited_pres = st.data_editor(
+            st.session_state.df_items_presupuesto,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Detalle": st.column_config.TextColumn("Detalle / Especificaciones *", required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.01, default=1.0, step=1.0),
+                "Precio Unitario": st.column_config.NumberColumn(f"P. Unitario Venta ({moneda})", min_value=0.0, default=0.0, step=100.0),
+                "Costo Material": st.column_config.NumberColumn(f"Costo Material Unit. ({moneda})", min_value=0.0, default=0.0, step=100.0)
+            },
+            key="editor_items_presupuesto"
+        )
+        
+        # Cálculo de totales en tiempo real
+        df_pr_calc = edited_pres.dropna(subset=["Detalle"]).copy() if not edited_pres.empty else pd.DataFrame()
+        if not df_pr_calc.empty:
+            df_pr_calc = df_pr_calc[df_pr_calc["Detalle"].str.strip() != ""]
+            df_pr_calc["Cantidad"] = pd.to_numeric(df_pr_calc["Cantidad"], errors="coerce").fillna(1.0)
+            df_pr_calc["Precio Unitario"] = pd.to_numeric(df_pr_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+            df_pr_calc["Costo Material"] = pd.to_numeric(df_pr_calc["Costo Material"], errors="coerce").fillna(0.0)
             
-            if btn_crear_pres:
-                total_calculado = pr_cant * pr_unitario
-                if pr_cliente.strip() and pr_unitario > 0:
-                    if IS_POSTGRES:
-                        run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
-                                        {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": pr_detalle.strip(), "cant": pr_cant, "pu": pr_unitario, "pt": total_calculado, "cm": pr_costo_mat, "e": "Pendiente"})
-                    else:
-                        run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, pr_detalle.strip(), pr_cant, pr_unitario, total_calculado, pr_costo_mat, "Pendiente"))
-                    st.success("¡Presupuesto guardado!")
-                    st.rerun()
+            df_pr_calc["Total_Venta"] = df_pr_calc["Cantidad"] * df_pr_calc["Precio Unitario"]
+            df_pr_calc["Total_Costo"] = df_pr_calc["Cantidad"] * df_pr_calc["Costo Material"]
+            
+            total_venta_pres = df_pr_calc["Total_Venta"].sum()
+            total_costo_pres = df_pr_calc["Total_Costo"].sum()
+        else:
+            total_venta_pres = 0.0
+            total_costo_pres = 0.0
+            
+        col_tot_pr1, col_tot_pr2 = st.columns(2)
+        with col_tot_pr1:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:8px 12px; border-radius:8px; font-weight:bold; color:#f59e0b;'>Costo Estimado Materiales: {moneda}{total_costo_pres:,.2f}</div>", unsafe_allow_html=True)
+        with col_tot_pr2:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:8px 12px; border-radius:8px; font-weight:bold; color:#60a5fa; text-align:right;'>PRECIO TOTAL VENTA: {moneda}{total_venta_pres:,.2f}</div>", unsafe_allow_html=True)
+            
+        st.write("")
+        if st.button("💾 Guardar Presupuesto Completo", type="primary", use_container_width=True):
+            if not pr_cliente.strip():
+                st.error("Por favor completá el nombre del Cliente.")
+            elif df_pr_calc.empty or total_venta_pres <= 0:
+                st.error("Ingresá al menos un ítem con precio mayor a 0.")
+            else:
+                lista_items_json = []
+                for _, r_it in df_pr_calc.iterrows():
+                    lista_items_json.append({
+                        "detalle": str(r_it["Detalle"]).strip(),
+                        "cantidad": float(r_it["Cantidad"]),
+                        "precio_unitario": float(r_it["Precio Unitario"]),
+                        "costo_material": float(r_it["Costo Material"])
+                    })
+                detalle_guardado = json.dumps(lista_items_json)
+                cant_total_items = df_pr_calc["Cantidad"].sum()
+                
+                if IS_POSTGRES:
+                    run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :t, :tt, :d, :cant, :pu, :pt, :cm, :e)",
+                                    {"f": pr_fecha, "c": pr_cliente.strip(), "t": pr_telefono.strip(), "tt": pr_tipo, "d": detalle_guardado, "cant": cant_total_items, "pu": total_venta_pres, "pt": total_venta_pres, "cm": total_costo_pres, "e": "Pendiente"})
+                else:
+                    run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, detalle_guardado, cant_total_items, total_venta_pres, total_venta_pres, total_costo_pres, "Pendiente"))
+                st.success("¡Presupuesto guardado con éxito!")
+                st.session_state.df_items_presupuesto = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0}])
+                st.rerun()
 
-    df_presupuestos = fetch_data_cached("SELECT * FROM presupuestos ORDER BY id DESC")
+    df_presupuestos = fetch_data_cached("SELECT * FROM presupuestos WHERE estado = 'Pendiente' ORDER BY id DESC")
     
     if not df_presupuestos.empty:
         opciones_pres = {
@@ -722,17 +804,31 @@ elif st.session_state.seccion_activa == "Presupuestos":
             
             col_b_p1, col_b_p2 = st.columns(2)
             with col_b_p1:
+                # Pasar a taller y borrar de presupuestos
                 if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
                     hora_actual_str = datetime.now().strftime("%H:%M")
+                    
+                    # Extraer resumen de texto de los trabajos
+                    items_parsed = parse_presupuesto_items(pres_data.get('detalle'))
+                    resumen_trabajo = ", ".join([f"{it['cantidad']:g}x {it['detalle']}" for it in items_parsed])
+                    if not resumen_trabajo.strip():
+                        resumen_trabajo = str(pres_data.get('tipo_trabajo') or 'Trabajo Gráfico')
+                        
+                    pv_tot = float(pres_data.get('precio_total') or 0.0)
+                    cm_tot = float(pres_data.get('costo_material') or 0.0)
+                    cli_nombre = str(pres_data['cliente'])
+                    cli_tel = str(pres_data.get('telefono') or '')
+                    
                     if IS_POSTGRES:
                         run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv)",
-                                        {"c": str(pres_data['cliente']), "tel": str(pres_data.get('telefono') or ''), "t": str(pres_data['tipo_trabajo']), "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": float(pres_data.get('costo_material') or 0.0), "pv": float(pres_data.get('precio_total') or 0.0)})
-                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id})
+                                        {"c": cli_nombre, "tel": cli_tel, "t": resumen_trabajo, "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": cm_tot, "pv": pv_tot})
+                        # Se borra de presupuestos
+                        run_execute_raw("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id})
                     else:
                         run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                        (str(pres_data['cliente']), str(pres_data.get('telefono') or ''), str(pres_data['tipo_trabajo']), "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", float(pres_data.get('costo_material') or 0.0), float(pres_data.get('precio_total') or 0.0)))
-                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,))
-                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller!")
+                                        (cli_nombre, cli_tel, resumen_trabajo, "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", cm_tot, pv_tot))
+                        run_execute_raw("DELETE FROM presupuestos WHERE id = ?", (pres_id,))
+                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller y removido de presupuestos pendientes!")
                     st.rerun()
             
             with col_b_p2:
@@ -746,22 +842,37 @@ elif st.session_state.seccion_activa == "Presupuestos":
 
         st.divider()
         
-        pr_det = str(pres_data.get('detalle') or pres_data.get('tipo_trabajo', 'Trabajo Gráfico'))
+        pr_det_raw = str(pres_data.get('detalle') or '')
         pr_tel = str(pres_data.get('telefono') or 'No especificado')
         pr_cant_val = float(pres_data.get('cantidad') or 1.0)
         pr_unit_val = float(pres_data.get('precio_unitario') or 0.0)
         pr_tot_val = float(pres_data.get('precio_total') or 0.0)
         
+        items_lista_render = parse_presupuesto_items(pr_det_raw, pr_cant_val, pr_unit_val)
+        
         pdf_pres_bytes = generar_pdf_presupuesto(
             titulo_actual, int(pres_id), str(pres_data['fecha']),
             str(pres_data['cliente']), pr_tel, str(pres_data['tipo_trabajo']),
-            pr_det, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
+            pr_det_raw, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
         )
         
-        # Vista Previa Visual
+        # Vista Previa Visual con Múltiples Renglones
         st.markdown("### 👁️ Vista Previa del Presupuesto")
         info_emp_sub = f"{dir_empresa} | {tel_empresa}" if (dir_empresa and tel_empresa) else (dir_empresa or tel_empresa or "")
         
+        filas_html_tabla = ""
+        for it in items_lista_render:
+            it_name = str(it.get("detalle", ""))
+            it_cant = float(it.get("cantidad", 1.0))
+            it_pu = float(it.get("precio_unitario", 0.0))
+            it_subtot = it_cant * it_pu
+            filas_html_tabla += f"""<tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
+<td style="padding: 12px 10px; color: #334155;">{it_name}</td>
+<td style="padding: 12px 10px; text-align: center; color: #334155;">{it_cant:,.0f}</td>
+<td style="padding: 12px 10px; text-align: right; color: #334155;">{moneda}{it_pu:,.2f}</td>
+<td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #1e3a8a;">{moneda}{it_subtot:,.2f}</td>
+</tr>"""
+
         presupuesto_preview_html = f"""<div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">
 <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 16px;">
 <div>
@@ -789,12 +900,7 @@ elif st.session_state.seccion_activa == "Presupuestos":
 </tr>
 </thead>
 <tbody>
-<tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
-<td style="padding: 12px 10px; color: #334155;">{pr_det}</td>
-<td style="padding: 12px 10px; text-align: center; color: #334155;">{pr_cant_val:,.0f}</td>
-<td style="padding: 12px 10px; text-align: right; color: #334155;">{moneda}{pr_unit_val:,.2f}</td>
-<td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</td>
-</tr>
+{filas_html_tabla}
 </tbody>
 </table>
 <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
@@ -841,6 +947,8 @@ function imprimirPresupuesto() {{
     🖨️ Imprimir
 </button>"""
             st.components.v1.html(html_impresion_pres, height=50)
+    else:
+        st.info("No hay presupuestos pendientes. ¡Todos los presupuestos fueron pasados al taller o eliminados!")
 
 # ==========================================
 # VISTA 3: BOLETAS Y COMPROBANTES CON WHATSAPP
@@ -933,7 +1041,7 @@ elif st.session_state.seccion_activa == "Boletas":
 </div>
 <div style="text-align: right;">
 <h3 style="margin: 0; color: #15803d; font-size: 17px; font-weight: 800;">BOLETA N° #{int(bol_id):04d}</h3>
-<p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {bol_data['fecha']}</p>
+<p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {bol_data['fecha']}</p>
 </div>
 </div>
 <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">
@@ -1272,7 +1380,6 @@ elif st.session_state.seccion_activa == "Balance":
     total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
     total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
     
-    # Egresos Totales = Compras de Insumos + Costos de Producción/Tercerizado
     total_egresos_completo = total_costos_produccion + total_compras
     ganancia_neta = total_ventas - total_egresos_completo
     margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
