@@ -274,9 +274,15 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- ESTILOS RESPONSIVE DARK + CORRECCIÓN APPLE WEBKIT / SAFARI ----------------
+# ---------------- ESTILOS RESPONSIVE DARK + FORZADO MODO OSCURO EN APPLE/SAFARI ----------------
 st.markdown("""
 <style>
+    /* Forzar modo oscuro a nivel navegador */
+    :root, html, body {
+        color-scheme: dark !important;
+        background-color: #050508 !important;
+    }
+    
     #MainMenu, footer, header, .stDeployButton, [data-testid="stDecoration"], [data-testid="stHeader"] {
         display: none !important;
     }
@@ -291,12 +297,60 @@ st.markdown("""
         padding-bottom: 2.5rem !important;
         max-width: 1400px;
     }
+
+    /* FORZAR DESPLEGABLES E INPUTS EN OSCURO (Filtrar, Ordenar y Buscar) */
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"],
+    .stSelectbox div[data-baseweb="select"] > div,
+    .stTextInput div[data-baseweb="input"] {
+        background-color: #111422 !important;
+        background: #111422 !important;
+        color: #f8fafc !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 8px !important;
+        -webkit-text-fill-color: #f8fafc !important;
+    }
     
-    /* FIX APPLE / SAFARI: Etiquetas de selectores y campos SIEMPRE legibles */
+    /* Texto interno y valores de los desplegables */
+    div[data-baseweb="select"] *,
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] div {
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+    }
+    
+    /* Campo de texto de búsqueda */
+    div[data-baseweb="input"] input,
+    .stTextInput input {
+        background-color: transparent !important;
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+    }
+    div[data-baseweb="input"] input::placeholder {
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
+    }
+    
+    /* Menús emergentes al hacer clic en desplegables */
+    ul[data-baseweb="menu"],
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] div {
+        background-color: #111422 !important;
+        color: #f8fafc !important;
+        border-color: #1e293b !important;
+    }
+    li[data-baseweb="menu-item"] {
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+    }
+    li[data-baseweb="menu-item"]:hover {
+        background-color: #1e293b !important;
+    }
+
+    /* Etiquetas de los campos siempre claras y legibles */
     label[data-testid="stWidgetLabel"] p,
     label p,
     div[data-testid="stWidgetLabel"] label,
-    div[data-testid="stMarkdownContainer"] p,
     .stSelectbox label,
     .stTextInput label,
     .stNumberInput label,
@@ -306,7 +360,7 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* PÍLDORAS INACTIVAS: Compatible 100% con Streamlit moderno en Safari y Mac */
+    /* PÍLDORAS DE NAVEGACIÓN (Compatibles con Safari / Mac) */
     div[data-testid="stButton"] > button,
     div.row-widget.stButton > button,
     button[data-testid="baseButton-secondary"],
@@ -361,6 +415,14 @@ st.markdown("""
     button[data-testid="baseButton-primary"] span {
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
+    }
+
+    /* TABLA DE DATAFRAME OSCURA EN CUALQUIER NAVEGADOR */
+    [data-testid="stDataFrame"] {
+        color-scheme: dark !important;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid #1e293b;
     }
 
     /* BADGES DE ESTADOS RESISTENTES A SAFARI */
@@ -805,6 +867,7 @@ if st.session_state.seccion_activa == "Trabajos":
 
         df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
         
+        # Tabla con Venta, Seña, Saldo y Ganancia
         df_mostrar = df_trabajos_tabla.rename(columns={
             'cliente': 'Cliente',
             'telefono': 'Teléfono',
