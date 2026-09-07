@@ -148,21 +148,18 @@ def init_db_tables_cached():
             """))
             
             columnas_migracion = [
-                # Trabajos (Seña y Saldo)
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS sena REAL DEFAULT 0;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS saldo REAL DEFAULT 0;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS presupuesto_origen_id INTEGER;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS hora_carga TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS telefono TEXT;",
                 "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS taller_externo TEXT;",
-                # Presupuestos
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS costo_material REAL DEFAULT 0;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS telefono TEXT;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'Pendiente';",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;",
                 "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS precio_total REAL DEFAULT 0;",
-                # Boletas y Compras
                 "ALTER TABLE boletas ADD COLUMN IF NOT EXISTS metodo_pago TEXT;",
                 "ALTER TABLE compras ADD COLUMN IF NOT EXISTS cantidad REAL DEFAULT 1;",
                 "ALTER TABLE compras ADD COLUMN IF NOT EXISTS precio_unitario REAL DEFAULT 0;"
@@ -286,7 +283,7 @@ st.markdown("""
     .stApp {
         background-color: #050508 !important;
         color: #f8fafc !important;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif !important;
         -webkit-font-smoothing: antialiased !important;
     }
     .block-container {
@@ -295,76 +292,92 @@ st.markdown("""
         max-width: 1400px;
     }
     
-    /* FIX APPLE / SAFARI: Forzar apariencia y color sin inversión automática */
-    button, input, textarea, select {
-        -webkit-appearance: none !important;
-        -moz-appearance: none !important;
-        appearance: none !important;
+    /* FIX APPLE / SAFARI: Etiquetas de selectores y campos SIEMPRE legibles */
+    label[data-testid="stWidgetLabel"] p,
+    label p,
+    div[data-testid="stWidgetLabel"] label,
+    div[data-testid="stMarkdownContainer"] p,
+    .stSelectbox label,
+    .stTextInput label,
+    .stNumberInput label,
+    .stDateInput label {
+        color: #cbd5e1 !important;
+        -webkit-text-fill-color: #cbd5e1 !important;
+        font-weight: 600 !important;
     }
-    
-    /* PÍLDORAS INACTIVAS (Compatible 100% con iOS Safari y Mac) */
-    div.row-widget.stButton > button[kind="secondary"] {
-        background-color: #111422 !important;
-        background: #111422 !important;
-        color: #94a3b8 !important;
-        -webkit-text-fill-color: #94a3b8 !important;
-        border: 1px solid #1e293b !important;
+
+    /* PÍLDORAS INACTIVAS: Compatible 100% con Streamlit moderno en Safari y Mac */
+    div[data-testid="stButton"] > button,
+    div.row-widget.stButton > button,
+    button[data-testid="baseButton-secondary"],
+    button[kind="secondary"] {
+        background-color: #161b26 !important;
+        background: #161b26 !important;
+        color: #e2e8f0 !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
+        border: 1px solid #334155 !important;
         border-radius: 9999px !important;
-        padding: 6px 12px !important;
+        padding: 6px 14px !important;
         font-size: 13.5px !important;
         font-weight: 600 !important;
         transition: all 0.15s ease !important;
+        -webkit-appearance: none !important;
     }
-    div.row-widget.stButton > button[kind="secondary"] p,
-    div.row-widget.stButton > button[kind="secondary"] span {
-        color: #94a3b8 !important;
-        -webkit-text-fill-color: #94a3b8 !important;
+    div[data-testid="stButton"] > button p,
+    div[data-testid="stButton"] > button span,
+    button[data-testid="baseButton-secondary"] p,
+    button[data-testid="baseButton-secondary"] span {
+        color: #e2e8f0 !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
     }
-    div.row-widget.stButton > button[kind="secondary"]:hover {
-        background-color: #1e293b !important;
+    div[data-testid="stButton"] > button:hover {
+        background-color: #242d3d !important;
+        border-color: #3b82f6 !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
-        border-color: #3b82f6 !important;
     }
-    div.row-widget.stButton > button[kind="secondary"]:hover p,
-    div.row-widget.stButton > button[kind="secondary"]:hover span {
+    div[data-testid="stButton"] > button:hover p,
+    div[data-testid="stButton"] > button:hover span {
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
     
     /* PÍLDORA ACTIVA */
-    div.row-widget.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%) !important;
+    div[data-testid="stButton"] > button[kind="primary"],
+    button[data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #ef4444 0%, #f97316 100%) !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
         border: none !important;
         border-radius: 9999px !important;
-        padding: 6px 14px !important;
+        padding: 6px 16px !important;
         font-size: 13.5px !important;
         font-weight: 700 !important;
-        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.45) !important;
+        box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
     }
-    div.row-widget.stButton > button[kind="primary"] p,
-    div.row-widget.stButton > button[kind="primary"] span {
+    div[data-testid="stButton"] > button[kind="primary"] p,
+    div[data-testid="stButton"] > button[kind="primary"] span,
+    button[data-testid="baseButton-primary"] p,
+    button[data-testid="baseButton-primary"] span {
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* BADGES DE ESTADOS RESISTENTES A SAFARI DARK MODE */
+    /* BADGES DE ESTADOS RESISTENTES A SAFARI */
     .badge-estado {
         display: inline-block;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border-radius: 6px;
         font-weight: 700;
-        font-size: 12px;
+        font-size: 12.5px;
         line-height: 1.2;
         -webkit-text-fill-color: currentColor !important;
     }
-    .badge-pen { background-color: #3b0d19 !important; color: #f87171 !important; border: 1px solid #7f1d1d !important; }
-    .badge-imp { background-color: #2e1065 !important; color: #c084fc !important; border: 1px solid #581c87 !important; }
+    .badge-pen { background-color: #3b0d19 !important; color: #fca5a5 !important; border: 1px solid #7f1d1d !important; }
+    .badge-imp { background-color: #2e1065 !important; color: #d8b4fe !important; border: 1px solid #581c87 !important; }
     .badge-arm { background-color: #3a2204 !important; color: #fde047 !important; border: 1px solid #854d0e !important; }
-    .badge-ret { background-color: #052e16 !important; color: #4ade80 !important; border: 1px solid #14532d !important; }
-    .badge-cob { background-color: #082f49 !important; color: #38bdf8 !important; border: 1px solid #075985 !important; }
+    .badge-ret { background-color: #052e16 !important; color: #86efac !important; border: 1px solid #14532d !important; }
+    .badge-cob { background-color: #082f49 !important; color: #7dd3fc !important; border: 1px solid #075985 !important; }
 
     /* HERO DINÁMICO */
     .hero-container {
@@ -716,7 +729,7 @@ if st.session_state.seccion_activa == "Trabajos":
                     st.warning(f"Trabajo #{id_borrar} eliminado.")
                     st.rerun()
 
-    # Viñetas de estados optimizadas para Apple / Safari (sin texto blanco oculto)
+    # Viñetas de estados optimizadas para Apple / Safari
     st.markdown("""
     <div style='background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 13px;'>
         <span style='color: #8b949e; font-weight: 700;'>ESTADOS:&nbsp;&nbsp;</span>
@@ -792,7 +805,6 @@ if st.session_state.seccion_activa == "Trabajos":
 
         df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
         
-        # Tabla con Venta, Seña, Saldo y Ganancia
         df_mostrar = df_trabajos_tabla.rename(columns={
             'cliente': 'Cliente',
             'telefono': 'Teléfono',
