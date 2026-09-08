@@ -274,7 +274,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- ESTILOS RESPONSIVE DARK + FORZADO EN APPLE/SAFARI ----------------
+# ---------------- ESTILOS DARK MODE COMPATIBLES APPLE/SAFARI ----------------
 st.markdown("""
 <style>
     :root, html, body {
@@ -296,7 +296,7 @@ st.markdown("""
         max-width: 1400px;
     }
 
-    /* DESPLEGABLES E INPUTS EN OSCURO (Filtrar, Ordenar y Buscar) */
+    /* DESPLEGABLES E INPUTS EN OSCURO */
     div[data-baseweb="select"] > div,
     div[data-baseweb="input"],
     .stSelectbox div[data-baseweb="select"] > div,
@@ -351,7 +351,7 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* PÍLDORAS DE NAVEGACIÓN SUPERIORES */
+    /* PÍLDORAS SUPERIORES */
     div[data-testid="stButton"] > button,
     div.row-widget.stButton > button,
     button[data-testid="baseButton-secondary"],
@@ -407,34 +407,12 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* FILAS DE TRABAJOS CON ACCIONES DIRECTAS */
-    .tabla-header {
-        display: grid;
-        grid-template-columns: 1.6fr 1.1fr 2fr 1fr 1.2fr 1fr 1.2fr 0.9fr 0.9fr 0.8fr 0.8fr 0.9fr 1.2fr;
-        padding: 10px 14px;
-        background-color: #0b0f19;
-        border: 1px solid #1e293b;
+    /* TABLA NATIVA DE STREAMLIT (OSCURA Y DEFINIDA) */
+    [data-testid="stDataFrame"] {
+        color-scheme: dark !important;
         border-radius: 8px;
-        font-weight: 700;
-        font-size: 12.5px;
-        color: #94a3b8;
-        margin-bottom: 6px;
-    }
-    .fila-trabajo {
-        display: grid;
-        grid-template-columns: 1.6fr 1.1fr 2fr 1fr 1.2fr 1fr 1.2fr 0.9fr 0.9fr 0.8fr 0.8fr 0.9fr 1.2fr;
-        padding: 10px 14px;
-        background-color: #0d1117;
+        overflow: hidden;
         border: 1px solid #1e293b;
-        border-radius: 8px;
-        font-size: 13px;
-        align-items: center;
-        margin-bottom: 5px;
-        transition: background 0.15s ease;
-    }
-    .fila-trabajo:hover {
-        background-color: #161b26;
-        border-color: #334155;
     }
 
     /* BADGES DE ESTADOS RESISTENTES A SAFARI */
@@ -477,7 +455,6 @@ st.markdown("""
     }
     @media (max-width: 768px) {
         .hero-title { font-size: 24px !important; }
-        .tabla-header { display: none !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -617,11 +594,11 @@ SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Comp
 if 'seccion_activa' not in st.session_state:
     st.session_state.seccion_activa = "Trabajos"
 
-# Estados de acción en línea para Trabajos
-if 'editando_trabajo_id' not in st.session_state:
-    st.session_state.editando_trabajo_id = None
-if 'borrando_trabajo_id' not in st.session_state:
-    st.session_state.borrando_trabajo_id = None
+# Estados de control para la acción activa en Trabajos
+if 'trabajo_en_edicion' not in st.session_state:
+    st.session_state.trabajo_en_edicion = None
+if 'trabajo_en_borrado' not in st.session_state:
+    st.session_state.trabajo_en_borrado = None
 
 col_logo, col_pills = st.columns([1.3, 7])
 with col_logo:
@@ -634,15 +611,15 @@ with col_pills:
         if p_cols[i].button(s, key=f"pill_{s}", type=btn_kind, use_container_width=True):
             if st.session_state.seccion_activa != s:
                 st.session_state.seccion_activa = s
-                st.session_state.editando_trabajo_id = None
-                st.session_state.borrando_trabajo_id = None
+                st.session_state.trabajo_en_edicion = None
+                st.session_state.trabajo_en_borrado = None
                 st.rerun()
 
 st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 14px 0;'>", unsafe_allow_html=True)
 
 # ---------------- HERO DINÁMICO ----------------
 HERO_INFO = {
-    "Trabajos": ("Gestión de Trabajos y Producción", "Edición y borrado directo en cada renglón, control de señas, saldos y ganancias."),
+    "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, cálculo de señas, saldos y ganancias."),
     "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo de materiales, ganancia estimada y pase a taller."),
     "Boletas": ("Comprobantes y Boletas de Pago", "Registro de señas, saldos pendientes, alias de cobro y aviso por WhatsApp."),
     "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
@@ -662,7 +639,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS (CON EDICIÓN Y BORRADO EN RENGLÓN)
+# VISTA 1: TRABAJOS Y PEDIDOS
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
@@ -671,70 +648,120 @@ if st.session_state.seccion_activa == "Trabajos":
         ORDER BY fecha_entrega ASC, id DESC
     """)
     
-    col_t_top1, col_t_top2 = st.columns([3, 1])
-    with col_t_top1:
-        with st.expander("➕ Cargar Nuevo Trabajo", expanded=False):
-            with st.form("form_nuevo_trabajo", clear_on_submit=True):
-                col_t1, col_t2 = st.columns(2)
-                with col_t1:
-                    nuevo_cli = st.text_input("Nombre del Cliente *")
-                    nuevo_tel = st.text_input("Teléfono / WhatsApp (ej: 54911...)")
-                    nuevo_trabajo = st.text_input("Trabajo / Descripción *")
-                with col_t2:
-                    nuevo_taller = st.text_input("Imprenta / Taller Tercerizado (Opcional)", placeholder="Ej: Imprenta Central")
-                    nuevo_est = st.selectbox("Estado Inicial", ESTADOS_TRABAJO, key="n_est")
-                    col_sub_f1, col_sub_f2 = st.columns(2)
-                    with col_sub_f1:
-                        nuevo_fcarga = st.date_input("Fecha Carga", value=date.today(), key="n_fc")
-                    with col_sub_f2:
-                        nuevo_fentrega = st.date_input("Fecha Entrega", value=date.today(), key="n_fe")
+    # 1. CARGA DE NUEVO TRABAJO EN UN SOLO RENGLÓN COMPACTO
+    with st.expander("➕ Cargar Nuevo Trabajo", expanded=False):
+        with st.form("form_nuevo_trabajo_un_renglon", clear_on_submit=True):
+            r_c1, r_c2, r_c3, r_c4, r_c5, r_c6, r_c7, r_c8, r_c9 = st.columns([1.6, 1.3, 1.8, 1.2, 1.1, 1.1, 1.1, 1.1, 1.1])
+            with r_c1:
+                nuevo_cli = st.text_input("Cliente *", placeholder="Nombre")
+            with r_c2:
+                nuevo_tel = st.text_input("Teléfono", placeholder="WhatsApp")
+            with r_c3:
+                nuevo_trabajo = st.text_input("Trabajo *", placeholder="Descripción")
+            with r_c4:
+                nuevo_taller = st.text_input("Taller Tercerizado", placeholder="Imprenta (Opc.)")
+            with r_c5:
+                nuevo_fentrega = st.date_input("Fecha Entrega", value=date.today())
+            with r_c6:
+                nuevo_costo = st.number_input(f"Costo ({moneda})", min_value=0.0, step=100.0)
+            with r_c7:
+                nuevo_precio = st.number_input(f"Venta ({moneda}) *", min_value=0.0, step=100.0)
+            with r_c8:
+                nuevo_sena = st.number_input(f"Seña ({moneda})", min_value=0.0, step=100.0)
+            with r_c9:
+                st.write("")
+                st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+                guardar_nuevo = st.form_submit_button("💾 Guardar", type="primary", use_container_width=True)
                 
-                col_m1, col_m2, col_m3 = st.columns(3)
-                with col_m1:
-                    nuevo_costo = st.number_input(f"Costo Producción ({moneda})", min_value=0.0, step=100.0, key="n_costo")
-                with col_m2:
-                    nuevo_precio = st.number_input(f"Precio Venta Final ({moneda}) *", min_value=0.0, step=100.0, key="n_precio")
-                with col_m3:
-                    nuevo_sena = st.number_input(f"Seña / Abonado ({moneda})", min_value=0.0, step=100.0, key="n_sena", help="Si el cliente dejó una seña, ingresala acá.")
-                
-                guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
-                if guardar_nuevo:
-                    if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
-                        hora_actual_str = datetime.now().strftime("%H:%M")
-                        saldo_inicial = max(0.0, float(nuevo_precio) - float(nuevo_sena))
-                        if IS_POSTGRES:
-                            run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv, :sena, :sal)",
-                                            {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": str(nuevo_fcarga), "hc": hora_actual_str, "fe": str(nuevo_fentrega), "e": nuevo_est, "cm": float(nuevo_costo), "pv": float(nuevo_precio), "sena": float(nuevo_sena), "sal": float(saldo_inicial)})
-                        else:
-                            run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                            (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), str(nuevo_fcarga), hora_actual_str, str(nuevo_fentrega), nuevo_est, float(nuevo_costo), float(nuevo_precio), float(nuevo_sena), float(saldo_inicial)))
-                        st.success("¡Trabajo guardado con éxito!")
-                        st.rerun()
-                    else:
-                        st.error("Completá cliente, trabajo y precio de venta.")
-
-    with col_t_top2:
-        df_con_origen = df_todos_trabajos[df_todos_trabajos['presupuesto_origen_id'].notna() & (df_todos_trabajos['presupuesto_origen_id'] > 0)]
-        if not df_con_origen.empty:
-            with st.expander("↩️ Devolver Presupuesto", expanded=False):
-                opc_devolver = {
-                    f"#{row['id']} - {row['cliente']} (Presupuesto #{int(row['presupuesto_origen_id'])})": row
-                    for _, row in df_con_origen.iterrows()
-                }
-                sel_dev = st.selectbox("Elegí el trabajo para regresar:", list(opc_devolver.keys()), key="sel_dev_trab")
-                r_dev = opc_devolver[sel_dev]
-                id_trab_dev = r_dev['id']
-                id_pres_dev = int(r_dev['presupuesto_origen_id'])
-                
-                if st.button("↩️ Regresar", type="primary", use_container_width=True, key="btn_confirm_dev"):
+            if guardar_nuevo:
+                if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
+                    hora_actual_str = datetime.now().strftime("%H:%M")
+                    saldo_inicial = max(0.0, float(nuevo_precio) - float(nuevo_sena))
                     if IS_POSTGRES:
-                        run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :pid", {"pid": id_pres_dev})
-                        run_execute_raw("DELETE FROM trabajos WHERE id = :tid", {"tid": id_trab_dev})
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv, :sena, :sal)",
+                                        {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": str(date.today()), "hc": hora_actual_str, "fe": str(nuevo_fentrega), "e": "Pendiente", "cm": float(nuevo_costo), "pv": float(nuevo_precio), "sena": float(nuevo_sena), "sal": float(saldo_inicial)})
                     else:
-                        run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = ?", (id_pres_dev,))
-                        run_execute_raw("DELETE FROM trabajos WHERE id = ?", (id_trab_dev,))
-                    st.success(f"Trabajo #{id_trab_dev} devuelto a Presupuesto #{id_pres_dev}.")
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), str(date.today()), hora_actual_str, str(nuevo_fentrega), "Pendiente", float(nuevo_costo), float(nuevo_precio), float(nuevo_sena), float(saldo_inicial)))
+                    st.success("¡Trabajo guardado con éxito!")
                     st.rerun()
+                else:
+                    st.error("Completá cliente, trabajo y precio de venta.")
+
+    # 2. PANEL DINÁMICO DE EDICIÓN O BORRADO (SE ABRE AL TOCAR EL BOTÓN AL LADO DE LA TABLA)
+    if st.session_state.trabajo_en_borrado is not None:
+        t_id_borrar = st.session_state.trabajo_en_borrado
+        t_data_del = df_todos_trabajos[df_todos_trabajos['id'] == t_id_borrar]
+        if not t_data_del.empty:
+            t_row = t_data_del.iloc[0]
+            with st.container(border=True):
+                col_w_txt, col_w_si, col_w_no = st.columns([5, 1.5, 1.5])
+                with col_w_txt:
+                    st.markdown(f"⚠️ **¿Seguro que desea borrar este trabajo de *{t_row['cliente']}* ({t_row['tipo_trabajo']})?**")
+                with col_w_si:
+                    if st.button("✅ Sí, Borrar", type="primary", use_container_width=True, key="btn_confirm_si_borrar"):
+                        if IS_POSTGRES: run_execute_raw("DELETE FROM trabajos WHERE id=:id", {"id": t_id_borrar})
+                        else: run_execute_raw("DELETE FROM trabajos WHERE id=?", (t_id_borrar,))
+                        st.session_state.trabajo_en_borrado = None
+                        st.rerun()
+                with col_w_no:
+                    if st.button("❌ No, Cancelar", use_container_width=True, key="btn_cancel_no_borrar"):
+                        st.session_state.trabajo_en_borrado = None
+                        st.rerun()
+
+    if st.session_state.trabajo_en_edicion is not None:
+        t_id_editar = st.session_state.trabajo_en_edicion
+        t_data_ed = df_todos_trabajos[df_todos_trabajos['id'] == t_id_editar]
+        if not t_data_ed.empty:
+            t_row_ed = t_data_ed.iloc[0]
+            with st.container(border=True):
+                st.markdown(f"**✏️ Editando Trabajo #{t_id_editar} - {t_row_ed['cliente']}**")
+                try: fc_v = datetime.strptime(str(t_row_ed['fecha_carga']), "%Y-%m-%d").date()
+                except Exception: fc_v = date.today()
+                try: fe_v = datetime.strptime(str(t_row_ed['fecha_entrega']), "%Y-%m-%d").date()
+                except Exception: fe_v = date.today()
+                
+                with st.form(f"form_editar_trabajo_{t_id_editar}"):
+                    ed_c1, ed_c2, ed_c3, ed_c4 = st.columns([2, 2, 2, 2])
+                    with ed_c1:
+                        ed_cli = st.text_input("Cliente *", value=str(t_row_ed['cliente']))
+                        ed_tel = st.text_input("Teléfono", value=str(t_row_ed.get('telefono') or ''))
+                    with ed_c2:
+                        ed_trab = st.text_input("Trabajo *", value=str(t_row_ed['tipo_trabajo']))
+                        ed_tall = st.text_input("Taller Tercerizado", value=str(t_row_ed.get('taller_externo') or ''))
+                    with ed_c3:
+                        idx_e = ESTADOS_TRABAJO.index(t_row_ed['estado']) if t_row_ed['estado'] in ESTADOS_TRABAJO else 0
+                        ed_est = st.selectbox("Estado del Trabajo *", ESTADOS_TRABAJO, index=idx_e)
+                        ed_fe = st.date_input("Fecha Entrega", value=fe_v)
+                    with ed_c4:
+                        ed_cost = st.number_input(f"Costo ({moneda})", min_value=0.0, value=float(t_row_ed['costo_material'] or 0.0), step=100.0)
+                        col_sub_v1, col_sub_v2 = st.columns(2)
+                        with col_sub_v1:
+                            ed_vent = st.number_input(f"Venta ({moneda}) *", min_value=0.0, value=float(t_row_ed['precio_venta'] or 0.0), step=100.0)
+                        with col_sub_v2:
+                            ed_sen = st.number_input(f"Seña ({moneda})", min_value=0.0, value=float(t_row_ed['sena'] or 0.0), step=100.0)
+                            
+                    col_b_save, col_b_canc = st.columns([1, 1])
+                    with col_b_save:
+                        btn_s_ed = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
+                    with col_b_canc:
+                        btn_c_ed = st.form_submit_button("✖️ Cancelar", use_container_width=True)
+                        
+                    if btn_s_ed:
+                        if ed_cli.strip() and ed_trab.strip() and ed_vent > 0:
+                            saldo_act = max(0.0, float(ed_vent) - float(ed_sen))
+                            if IS_POSTGRES:
+                                run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv, sena=:sena, saldo=:sal WHERE id=:id",
+                                                {"c": ed_cli.strip(), "tel": ed_tel.strip(), "t": ed_trab.strip(), "te": ed_tall.strip(), "fe": str(ed_fe), "e": ed_est, "cm": float(ed_cost), "pv": float(ed_vent), "sena": float(ed_sen), "sal": float(saldo_act), "id": t_id_editar})
+                            else:
+                                run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=?, sena=?, saldo=? WHERE id=?",
+                                                (ed_cli.strip(), ed_tel.strip(), ed_trab.strip(), ed_tall.strip(), str(ed_fe), ed_est, float(ed_cost), float(ed_vent), float(ed_sen), float(saldo_act), t_id_editar))
+                            st.session_state.trabajo_en_edicion = None
+                            st.success("¡Trabajo actualizado!")
+                            st.rerun()
+                    elif btn_c_ed:
+                        st.session_state.trabajo_en_edicion = None
+                        st.rerun()
 
     # Viñetas de estados
     st.markdown("""
@@ -808,153 +835,64 @@ if st.session_state.seccion_activa == "Trabajos":
         elif criterio_orden == "Mayor Saldo Pendiente":
             df_trabajos_tabla = df_trabajos_tabla.sort_values(by="saldo", ascending=False)
 
-        # ENCABEZADO DE TABLA INTERACTIVA
-        st.markdown(f"""
-        <div class="tabla-header">
-            <div>Cliente</div>
-            <div>Teléfono</div>
-            <div>Trabajo</div>
-            <div>Imprenta / Taller</div>
-            <div>Fecha y Hora</div>
-            <div>Entrega</div>
-            <div>Estado</div>
-            <div style='text-align:right;'>Costo ({moneda})</div>
-            <div style='text-align:right;'>Venta ({moneda})</div>
-            <div style='text-align:right;'>Seña ({moneda})</div>
-            <div style='text-align:right;'>Saldo ({moneda})</div>
-            <div style='text-align:right;'>Ganancia</div>
-            <div style='text-align:center;'>Acciones</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        badge_class_map = {
-            "Pendiente": "badge-pen",
-            "En Taller Externo": "badge-imp",
-            "Listo para Armar": "badge-arm",
-            "Listo para Entrega": "badge-ret",
-            "Entregado y Cobrado": "badge-cob"
-        }
-
-        # RENDERIZADO DE CADA RENGLÓN CON ACCIONES DIRECTAS
-        for _, row in df_trabajos_tabla.iterrows():
-            row_id = row['id']
+        df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
+        
+        # 3. TABLA ORIGINAL COMO ANTES + BOTONES AL LADO DERECHO DONDE MARCÓ EL USUARIO
+        col_tabla_izq, col_acciones_der = st.columns([10.5, 1.5])
+        
+        with col_tabla_izq:
+            df_mostrar = df_trabajos_tabla.rename(columns={
+                'cliente': 'Cliente',
+                'telefono': 'Teléfono',
+                'tipo_trabajo': 'Trabajo',
+                'taller_externo': 'Imprenta / Taller',
+                'fecha_carga_mostrar': 'Fecha y Hora Carga',
+                'fecha_entrega': 'Fecha Entrega',
+                'estado': 'Estado',
+                'costo_material': f'Costo ({moneda})',
+                'precio_venta': f'Venta ({moneda})',
+                'sena': f'Seña ({moneda})',
+                'saldo': f'Saldo ({moneda})',
+                'ganancia_calc': f'Ganancia ({moneda})'
+            })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})', f'Seña ({moneda})', f'Saldo ({moneda})', f'Ganancia ({moneda})']]
             
-            # MODO 1: CONFIRMACIÓN DE BORRADO DIRECTO EN EL RENGLÓN
-            if st.session_state.borrando_trabajo_id == row_id:
-                with st.container(border=True):
-                    col_del_txt, col_del_si, col_del_no = st.columns([5, 1.5, 1.5])
-                    with col_del_txt:
-                        st.markdown(f"⚠️ **¿Seguro que desea borrar este trabajo de *{row['cliente']}* ({row['tipo_trabajo']})?**")
-                    with col_del_si:
-                        if st.button("✅ Sí, Borrar", key=f"btn_si_del_{row_id}", type="primary", use_container_width=True):
-                            if IS_POSTGRES:
-                                run_execute_raw("DELETE FROM trabajos WHERE id=:id", {"id": row_id})
-                            else:
-                                run_execute_raw("DELETE FROM trabajos WHERE id=?", (row_id,))
-                            st.session_state.borrando_trabajo_id = None
-                            st.rerun()
-                    with col_del_no:
-                        if st.button("❌ No, Cancelar", key=f"btn_no_del_{row_id}", use_container_width=True):
-                            st.session_state.borrando_trabajo_id = None
-                            st.rerun()
+            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
-            # MODO 2: EDICIÓN EN EL MISMO RENGLÓN
-            elif st.session_state.editando_trabajo_id == row_id:
-                with st.container(border=True):
-                    st.markdown(f"<div style='color: #60a5fa; font-weight: 700; margin-bottom: 8px;'>✏️ Editando Trabajo #{row_id}</div>", unsafe_allow_html=True)
-                    
-                    try: fc_val = datetime.strptime(str(row['fecha_carga']), "%Y-%m-%d").date()
-                    except Exception: fc_val = date.today()
-                    try: fe_val = datetime.strptime(str(row['fecha_entrega']), "%Y-%m-%d").date()
-                    except Exception: fe_val = date.today()
-                    
-                    with st.form(f"form_inline_edit_{row_id}"):
-                        col_e1, col_e2, col_e3, col_e4 = st.columns([2, 1.8, 2, 2])
-                        with col_e1:
-                            e_cli = st.text_input("Cliente *", value=str(row['cliente']))
-                            e_tel = st.text_input("Teléfono", value=str(row.get('telefono') or ''))
-                        with col_e2:
-                            e_trab = st.text_input("Trabajo *", value=str(row['tipo_trabajo']))
-                            e_tall = st.text_input("Imprenta / Taller", value=str(row.get('taller_externo') or ''))
-                        with col_e3:
-                            col_f1, col_f2 = st.columns(2)
-                            with col_f1:
-                                e_fc = st.date_input("Fecha Carga", value=fc_val)
-                            with col_f2:
-                                e_fe = st.date_input("Fecha Entrega", value=fe_val)
-                            
-                            idx_est = ESTADOS_TRABAJO.index(row['estado']) if row['estado'] in ESTADOS_TRABAJO else 0
-                            e_estado = st.selectbox("Estado del Trabajo *", ESTADOS_TRABAJO, index=idx_est)
-                        with col_e4:
-                            col_v1, col_v2 = st.columns(2)
-                            with col_v1:
-                                e_costo = st.number_input(f"Costo ({moneda})", min_value=0.0, value=float(row['costo_material'] or 0.0), step=100.0)
-                                e_sena = st.number_input(f"Seña ({moneda})", min_value=0.0, value=float(row['sena'] or 0.0), step=100.0)
-                            with col_v2:
-                                e_precio = st.number_input(f"Venta ({moneda}) *", min_value=0.0, value=float(row['precio_venta'] or 0.0), step=100.0)
-                                saldo_preview = max(0.0, float(e_precio) - float(e_sena))
-                                st.markdown(f"<div style='font-size:12px; margin-top:14px; color:#cbd5e1;'>Saldo: <b>{moneda}{saldo_preview:,.0f}</b></div>", unsafe_allow_html=True)
+        with col_acciones_der:
+            st.markdown("<div style='font-size:12px; font-weight:700; color:#94a3b8; text-align:center; padding-bottom:6px;'>Acciones</div>", unsafe_allow_html=True)
+            for _, r_btn in df_trabajos_tabla.iterrows():
+                r_id = r_btn['id']
+                b_col1, b_col2, b_col3 = st.columns(3)
+                
+                # Botón Lápiz (Editar)
+                with b_col1:
+                    if st.button("✏️", key=f"btn_lapiz_{r_id}", help="Editar este trabajo"):
+                        st.session_state.trabajo_en_edicion = r_id
+                        st.session_state.trabajo_en_borrado = None
+                        st.rerun()
                         
-                        col_btn_sav, col_btn_can = st.columns([1, 1])
-                        with col_btn_sav:
-                            btn_guardar = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
-                        with col_btn_can:
-                            btn_cancelar = st.form_submit_button("✖️ Cancelar", use_container_width=True)
-                            
-                        if btn_guardar:
-                            if e_cli.strip() and e_trab.strip() and e_precio > 0:
-                                saldo_final = max(0.0, float(e_precio) - float(e_sena))
-                                if IS_POSTGRES:
-                                    run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv, sena=:sena, saldo=:sal WHERE id=:id",
-                                                    {"c": e_cli.strip(), "tel": e_tel.strip(), "t": e_trab.strip(), "te": e_tall.strip(), "fc": str(e_fc), "fe": str(e_fe), "e": e_estado, "cm": float(e_costo), "pv": float(e_precio), "sena": float(e_sena), "sal": float(saldo_final), "id": row_id})
-                                else:
-                                    run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=?, sena=?, saldo=? WHERE id=?",
-                                                    (e_cli.strip(), e_tel.strip(), e_trab.strip(), e_tall.strip(), str(e_fc), str(e_fe), e_estado, float(e_costo), float(e_precio), float(e_sena), float(saldo_final), row_id))
-                                st.session_state.editando_trabajo_id = None
-                                st.success("¡Trabajo actualizado!")
-                                st.rerun()
-                        elif btn_cancelar:
-                            st.session_state.editando_trabajo_id = None
+                # Botón Return (Devolver a Presupuesto si se originó de uno)
+                with b_col2:
+                    p_orig = r_btn.get('presupuesto_origen_id')
+                    if pd.notna(p_orig) and int(p_orig) > 0:
+                        if st.button("↩️", key=f"btn_ret_{r_id}", help=f"Regresar al Presupuesto #{int(p_orig)}"):
+                            if IS_POSTGRES:
+                                run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :pid", {"pid": int(p_orig)})
+                                run_execute_raw("DELETE FROM trabajos WHERE id = :tid", {"tid": r_id})
+                            else:
+                                run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = ?", (int(p_orig),))
+                                run_execute_raw("DELETE FROM trabajos WHERE id = ?", (r_id,))
+                            st.success(f"Trabajo #{r_id} devuelto a Presupuesto #{int(p_orig)}.")
                             st.rerun()
-
-            # MODO 3: RENGLÓN NORMAL CON BOTÓN DE LÁPIZ Y BORRAR
-            else:
-                b_class = badge_class_map.get(row['estado'], "badge-pen")
-                b_texto = ESTADO_BADGES.get(row['estado'], row['estado'])
-                tel_str = str(row['telefono']) if row['telefono'] and str(row['telefono']).strip() else "-"
-                taller_str = str(row['taller_externo']) if row['taller_externo'] and str(row['taller_externo']).strip() else "-"
-                
-                # Columnas del renglón en pantalla
-                c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13 = st.columns([1.6, 1.1, 2, 1, 1.2, 1, 1.2, 0.9, 0.9, 0.8, 0.8, 0.9, 1.2])
-                
-                with c1: st.markdown(f"**{row['cliente']}**")
-                with c2: st.markdown(f"<span style='color:#94a3b8; font-size:12px;'>{tel_str}</span>", unsafe_allow_html=True)
-                with c3: st.markdown(str(row['tipo_trabajo']))
-                with c4: st.markdown(f"<span style='color:#94a3b8; font-size:12px;'>{taller_str}</span>", unsafe_allow_html=True)
-                with c5: st.markdown(f"<span style='color:#94a3b8; font-size:12px;'>{row['fecha_carga_mostrar']}</span>", unsafe_allow_html=True)
-                with c6: st.markdown(f"<span style='font-size:12px;'>{row['fecha_entrega']}</span>", unsafe_allow_html=True)
-                with c7: st.markdown(f"<span class='badge-estado {b_class}'>{b_texto}</span>", unsafe_allow_html=True)
-                with c8: st.markdown(f"<div style='text-align:right; color:#94a3b8;'>{moneda}{float(row['costo_material'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c9: st.markdown(f"<div style='text-align:right; font-weight:700;'>{moneda}{float(row['precio_venta'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c10: st.markdown(f"<div style='text-align:right; color:#38bdf8;'>{moneda}{float(row['sena'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c11: 
-                    saldo_val = float(row['saldo'] or 0)
-                    color_sal = "#f87171" if saldo_val > 0 else "#4ade80"
-                    st.markdown(f"<div style='text-align:right; color:{color_sal}; font-weight:600;'>{moneda}{saldo_val:,.0f}</div>", unsafe_allow_html=True)
-                with c12: st.markdown(f"<div style='text-align:right; color:#10b981; font-weight:700;'>{moneda}{float(row['ganancia_calc'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c13:
-                    col_btn_ed, col_btn_del = st.columns(2)
-                    with col_btn_ed:
-                        if st.button("✏️", key=f"btn_edit_{row_id}", help="Editar este trabajo", use_container_width=True):
-                            st.session_state.editando_trabajo_id = row_id
-                            st.session_state.borrando_trabajo_id = None
-                            st.rerun()
-                    with col_btn_del:
-                        if st.button("🗑️", key=f"btn_del_{row_id}", help="Borrar este trabajo", use_container_width=True):
-                            st.session_state.borrando_trabajo_id = row_id
-                            st.session_state.editando_trabajo_id = None
-                            st.rerun()
-                st.markdown("<hr style='border:none; border-top:1px solid #1e293b; margin:4px 0 6px 0;'>", unsafe_allow_html=True)
+                    else:
+                        st.button("↩️", key=f"btn_ret_dis_{r_id}", disabled=True, help="No proviene de un presupuesto")
+                        
+                # Botón Basurero (Borrar con confirmación)
+                with b_col3:
+                    if st.button("🗑️", key=f"btn_tacho_{r_id}", help="Borrar este trabajo"):
+                        st.session_state.trabajo_en_borrado = r_id
+                        st.session_state.trabajo_en_edicion = None
+                        st.rerun()
     else:
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
