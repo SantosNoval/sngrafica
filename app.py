@@ -274,7 +274,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- ESTILOS DARK MODE TIPO CUADRÍCULA PROFESIONAL (FOTO 2) ----------------
+# ---------------- ESTILOS DARK MODE TIPO CUADRÍCULA CERRADA (FOTO 2) ----------------
 st.markdown("""
 <style>
     :root, html, body {
@@ -366,7 +366,7 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
     }
 
-    /* CONTENEDOR DE TABLA CON BORDES EXACTOS A LA FOTO 2 */
+    /* MARCO CONTENEDOR DE LA TABLA COMPLETA */
     .tabla-grid-container {
         border: 1px solid #1e293b;
         border-radius: 8px;
@@ -375,12 +375,12 @@ st.markdown("""
         margin-top: 6px;
     }
 
-    /* CELDAS INDIVIDUALES CON LÍNEAS VERTICALES FINAS */
+    /* CELDAS INDIVIDUALES */
     .celda-tabla {
         border-right: 1px solid #161f30;
-        padding: 6px 8px;
+        padding: 5px 8px;
         font-size: 12.8px;
-        min-height: 38px;
+        min-height: 36px;
         display: flex;
         align-items: center;
         overflow: hidden;
@@ -389,7 +389,7 @@ st.markdown("""
     }
     .celda-tabla-header {
         border-right: 1px solid #1e293b;
-        padding: 7px 8px;
+        padding: 6px 8px;
         font-size: 12.5px;
         font-weight: 700;
         color: #94a3b8;
@@ -400,7 +400,7 @@ st.markdown("""
         border-bottom: 1.5px solid #1e293b;
     }
 
-    /* RENGLÓN COMPACTO DE STREAMLIT (ALTURA ~38px) */
+    /* RENGLÓN COMPACTO DE STREAMLIT */
     .row-grid-wrap {
         border-bottom: 1px solid #141b2a;
         background-color: #0b0f19;
@@ -414,10 +414,10 @@ st.markdown("""
         margin: 0px !important;
     }
 
-    /* BOTONES DE ACCIÓN: DISEÑO NÍTIDO, CUADRADO Y CENTRADO */
+    /* BOTONES DE ACCIÓN COMPACTOS */
     .celda-acciones {
         padding: 2px 4px !important;
-        min-height: 38px;
+        min-height: 36px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -596,7 +596,7 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
         [Paragraph(str(detalle), normal_style), Paragraph(f"{moneda}{total:,.2f}", bold_style)]
     ]
     t_items = Table(items_data, colWidths=[400, 140])
-    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#15803d")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
+    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-0), colors.HexColor("#15803d")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     elements.append(t_items)
     elements.append(Spacer(1, 14))
     
@@ -675,7 +675,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS (GRILLA EXACTA A LA FOTO 2)
+# VISTA 1: TRABAJOS Y PEDIDOS (CUADRÍCULA COMPACTA TIPO FOTO 2)
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
@@ -804,10 +804,10 @@ if st.session_state.seccion_activa == "Trabajos":
             "Entregado y Cobrado": "badge-cob"
         }
 
-        # CONTENEDOR ENMARCADO TIPO TABLA EXACTA
+        # 3. CONTENEDOR TIPO TABLA CON BORDES DEFINIDOS
         st.markdown('<div class="tabla-grid-container">', unsafe_allow_html=True)
         
-        # ENCABEZADO DE CELDAS CERRADAS CON LÍNEAS VERTICALES
+        # Encabezado idéntico al de la cuadrícula nativa
         c_h1, c_h2, c_h3, c_h4, c_h5, c_h6, c_h7, c_h8, c_h9, c_h10, c_h11, c_h12, c_h13 = st.columns(
             [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.1], gap="small"
         )
@@ -825,7 +825,7 @@ if st.session_state.seccion_activa == "Trabajos":
         with c_h12: st.markdown("<div class='celda-tabla-header' style='justify-content:flex-end;'>Ganancia</div>", unsafe_allow_html=True)
         with c_h13: st.markdown("<div class='celda-tabla-header' style='justify-content:center; border-right:none;'>⚙️ Acciones</div>", unsafe_allow_html=True)
 
-        # CADA FILA RENDERIZADA CON BORDES DE CELDA Y LOS 3 BOTONES ALINEADOS
+        # Renglones compactos cerrados
         for _, row in df_trabajos_tabla.iterrows():
             r_id = row['id']
             
@@ -846,7 +846,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.session_state.trabajo_en_borrado = None
                             st.rerun()
 
-            # EDICIÓN EN RENGLÓN
+            # EDICIÓN EN EL MISMO RENGLÓN
             elif st.session_state.trabajo_en_edicion == r_id:
                 with st.container(border=True):
                     st.markdown(f"**✏️ Editando Trabajo #{r_id} - {row['cliente']}**")
@@ -897,7 +897,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.session_state.trabajo_en_edicion = None
                             st.rerun()
 
-            # FILA NORMAL INTEGRADA (CUADRÍCULA CERRADA)
+            # FILA NORMAL INTEGRADA (CUADRÍCULA CERRADA IDÉNTICA A LA FOTO 2)
             else:
                 b_class = badge_class_map.get(row['estado'], "badge-pen")
                 b_texto = ESTADO_BADGES.get(row['estado'], row['estado'])
