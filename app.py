@@ -274,7 +274,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- ESTILOS DARK MODE COMPACTO Y ALINEADO ----------------
+# ---------------- ESTILOS DARK MODE TIPO CUADRÍCULA PROFESIONAL (FOTO 2) ----------------
 st.markdown("""
 <style>
     :root, html, body {
@@ -302,7 +302,6 @@ st.markdown("""
     .stSelectbox div[data-baseweb="select"] > div,
     .stTextInput div[data-baseweb="input"] {
         background-color: #111422 !important;
-        background: #111422 !important;
         color: #f8fafc !important;
         border: 1px solid #1e293b !important;
         border-radius: 8px !important;
@@ -340,7 +339,6 @@ st.markdown("""
     /* PÍLDORAS DEL MENÚ SUPERIOR */
     .top-nav div[data-testid="stButton"] > button {
         background-color: #161b26 !important;
-        background: #161b26 !important;
         color: #e2e8f0 !important;
         -webkit-text-fill-color: #e2e8f0 !important;
         border: 1px solid #334155 !important;
@@ -368,43 +366,88 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
     }
 
-    /* FILAS DE LA TABLA INTEGRADAS: ESTILO GRILLA ORIGINAL */
-    .row-tabla-custom {
-        border-bottom: 1px solid #161f30;
-        padding-top: 5px;
-        padding-bottom: 5px;
-        transition: background-color 0.12s ease;
-    }
-    .row-tabla-custom:hover {
-        background-color: #0b1120;
+    /* CONTENEDOR DE TABLA CON BORDES EXACTOS A LA FOTO 2 */
+    .tabla-grid-container {
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        background-color: #0b0f19;
+        overflow: hidden;
+        margin-top: 6px;
     }
 
-    /* BOTONES DE ACCIÓN: DISEÑO CUADRADO, VISIBLE Y NÍTIDO */
-    .btn-accion-box div[data-testid="stButton"] > button {
-        background-color: #161f30 !important;
+    /* CELDAS INDIVIDUALES CON LÍNEAS VERTICALES FINAS */
+    .celda-tabla {
+        border-right: 1px solid #161f30;
+        padding: 6px 8px;
+        font-size: 12.8px;
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .celda-tabla-header {
+        border-right: 1px solid #1e293b;
+        padding: 7px 8px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #94a3b8;
+        background-color: #0d1322;
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1.5px solid #1e293b;
+    }
+
+    /* RENGLÓN COMPACTO DE STREAMLIT (ALTURA ~38px) */
+    .row-grid-wrap {
+        border-bottom: 1px solid #141b2a;
+        background-color: #0b0f19;
+        transition: background-color 0.12s ease;
+    }
+    .row-grid-wrap:hover {
+        background-color: #121826;
+    }
+    .row-grid-wrap div[data-testid="column"] {
+        padding: 0px !important;
+        margin: 0px !important;
+    }
+
+    /* BOTONES DE ACCIÓN: DISEÑO NÍTIDO, CUADRADO Y CENTRADO */
+    .celda-acciones {
+        padding: 2px 4px !important;
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .celda-acciones div[data-testid="stButton"] > button {
+        background-color: #162032 !important;
         border: 1px solid #283548 !important;
-        border-radius: 6px !important;
+        border-radius: 5px !important;
         padding: 0 !important;
-        height: 32px !important;
+        height: 28px !important;
         width: 100% !important;
+        min-width: 26px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         margin: 0 !important;
     }
-    .btn-accion-box div[data-testid="stButton"] > button p,
-    .btn-accion-box div[data-testid="stButton"] > button span {
-        font-size: 16px !important;
+    .celda-acciones div[data-testid="stButton"] > button p,
+    .celda-acciones div[data-testid="stButton"] > button span {
+        font-size: 14px !important;
         line-height: 1 !important;
         margin: 0 !important;
         padding: 0 !important;
-        display: block !important;
+        display: inline-block !important;
     }
-    .btn-accion-box div[data-testid="stButton"] > button:hover {
-        background-color: #243247 !important;
+    .celda-acciones div[data-testid="stButton"] > button:hover {
+        background-color: #24344d !important;
         border-color: #60a5fa !important;
     }
-    .btn-accion-box div[data-testid="stButton"] > button[disabled] {
+    .celda-acciones div[data-testid="stButton"] > button[disabled] {
         opacity: 0.15 !important;
         border-color: #1e293b !important;
         background-color: transparent !important;
@@ -413,10 +456,10 @@ st.markdown("""
     /* BADGES DE ESTADOS */
     .badge-estado {
         display: inline-block;
-        padding: 3px 8px;
-        border-radius: 6px;
+        padding: 2px 7px;
+        border-radius: 5px;
         font-weight: 700;
-        font-size: 11.5px;
+        font-size: 11px;
         line-height: 1.2;
         -webkit-text-fill-color: currentColor !important;
     }
@@ -632,7 +675,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS
+# VISTA 1: TRABAJOS Y PEDIDOS (GRILLA EXACTA A LA FOTO 2)
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
@@ -641,7 +684,7 @@ if st.session_state.seccion_activa == "Trabajos":
         ORDER BY fecha_entrega ASC, id DESC
     """)
     
-    # CARGA DE NUEVO TRABAJO EN UN SOLO RENGLÓN COMPACTO
+    # 1. CARGA DE NUEVO TRABAJO EN UN SOLO RENGLÓN COMPACTO
     with st.expander("➕ Cargar Nuevo Trabajo", expanded=False):
         with st.form("form_nuevo_trabajo_un_renglon", clear_on_submit=True):
             r_c1, r_c2, r_c3, r_c4, r_c5, r_c6, r_c7, r_c8, r_c9 = st.columns([1.6, 1.3, 1.8, 1.2, 1.1, 1.1, 1.1, 1.1, 1.1])
@@ -681,7 +724,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 else:
                     st.error("Completá cliente, trabajo y precio de venta.")
 
-    # VIÑETAS DE ESTADOS
+    # 2. VIÑETAS DE ESTADOS
     st.markdown("""
     <div style='background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px 0; font-size: 13px;'>
         <span style='color: #8b949e; font-weight: 700;'>ESTADOS:&nbsp;&nbsp;</span>
@@ -724,6 +767,7 @@ if st.session_state.seccion_activa == "Trabajos":
         with col_filtro3:
             busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
+        # Filtros
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
             
@@ -734,6 +778,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
+        # Ordenamiento
         if criterio_orden == "Fecha Entrega (Próximos primero)":
             df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_entrega", ascending=True)
         elif criterio_orden == "Fecha Carga (Más recientes)":
@@ -759,31 +804,32 @@ if st.session_state.seccion_activa == "Trabajos":
             "Entregado y Cobrado": "badge-cob"
         }
 
-        # ENCABEZADO INTEGRADO DE LA TABLA
-        c_h1, c_h2, c_h3, c_h4, c_h5, c_h6, c_h7, c_h8, c_h9, c_h10, c_h11, c_h12, c_h13 = st.columns(
-            [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.3]
-        )
-        with c_h1: st.markdown("**Cliente**")
-        with c_h2: st.markdown("**Teléfono**")
-        with c_h3: st.markdown("**Trabajo**")
-        with c_h4: st.markdown("**Taller**")
-        with c_h5: st.markdown("**Fecha Carga**")
-        with c_h6: st.markdown("**Entrega**")
-        with c_h7: st.markdown("**Estado**")
-        with c_h8: st.markdown(f"<div style='text-align:right;'><b>Costo ({moneda})</b></div>", unsafe_allow_html=True)
-        with c_h9: st.markdown(f"<div style='text-align:right;'><b>Venta ({moneda})</b></div>", unsafe_allow_html=True)
-        with c_h10: st.markdown(f"<div style='text-align:right;'><b>Seña ({moneda})</b></div>", unsafe_allow_html=True)
-        with c_h11: st.markdown(f"<div style='text-align:right;'><b>Saldo ({moneda})</b></div>", unsafe_allow_html=True)
-        with c_h12: st.markdown(f"<div style='text-align:right;'><b>Ganancia</b></div>", unsafe_allow_html=True)
-        with c_h13: st.markdown("<div style='text-align:center;'><b>⚙️ Acciones</b></div>", unsafe_allow_html=True)
+        # CONTENEDOR ENMARCADO TIPO TABLA EXACTA
+        st.markdown('<div class="tabla-grid-container">', unsafe_allow_html=True)
         
-        st.markdown("<hr style='border:none; border-top:1.5px solid #2d3748; margin:2px 0 6px 0;'>", unsafe_allow_html=True)
+        # ENCABEZADO DE CELDAS CERRADAS CON LÍNEAS VERTICALES
+        c_h1, c_h2, c_h3, c_h4, c_h5, c_h6, c_h7, c_h8, c_h9, c_h10, c_h11, c_h12, c_h13 = st.columns(
+            [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.1], gap="small"
+        )
+        with c_h1: st.markdown("<div class='celda-tabla-header'>Cliente</div>", unsafe_allow_html=True)
+        with c_h2: st.markdown("<div class='celda-tabla-header'>Teléfono</div>", unsafe_allow_html=True)
+        with c_h3: st.markdown("<div class='celda-tabla-header'>Trabajo</div>", unsafe_allow_html=True)
+        with c_h4: st.markdown("<div class='celda-tabla-header'>Taller</div>", unsafe_allow_html=True)
+        with c_h5: st.markdown("<div class='celda-tabla-header'>Fecha Carga</div>", unsafe_allow_html=True)
+        with c_h6: st.markdown("<div class='celda-tabla-header'>Entrega</div>", unsafe_allow_html=True)
+        with c_h7: st.markdown("<div class='celda-tabla-header'>Estado</div>", unsafe_allow_html=True)
+        with c_h8: st.markdown(f"<div class='celda-tabla-header' style='justify-content:flex-end;'>Costo ({moneda})</div>", unsafe_allow_html=True)
+        with c_h9: st.markdown(f"<div class='celda-tabla-header' style='justify-content:flex-end;'>Venta ({moneda})</div>", unsafe_allow_html=True)
+        with c_h10: st.markdown(f"<div class='celda-tabla-header' style='justify-content:flex-end;'>Seña ({moneda})</div>", unsafe_allow_html=True)
+        with c_h11: st.markdown(f"<div class='celda-tabla-header' style='justify-content:flex-end;'>Saldo ({moneda})</div>", unsafe_allow_html=True)
+        with c_h12: st.markdown("<div class='celda-tabla-header' style='justify-content:flex-end;'>Ganancia</div>", unsafe_allow_html=True)
+        with c_h13: st.markdown("<div class='celda-tabla-header' style='justify-content:center; border-right:none;'>⚙️ Acciones</div>", unsafe_allow_html=True)
 
-        # RENGLONES INTEGRADOS
+        # CADA FILA RENDERIZADA CON BORDES DE CELDA Y LOS 3 BOTONES ALINEADOS
         for _, row in df_trabajos_tabla.iterrows():
             r_id = row['id']
             
-            # MODO A: CONFIRMACIÓN DE BORRADO EN EL MISMO RENGLÓN
+            # CONFIRMACIÓN DE BORRADO
             if st.session_state.trabajo_en_borrado == r_id:
                 with st.container(border=True):
                     col_del_txt, col_del_si, col_del_no = st.columns([6, 1.2, 1.2])
@@ -800,7 +846,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.session_state.trabajo_en_borrado = None
                             st.rerun()
 
-            # MODO B: EDICIÓN EN EL MISMO RENGLÓN
+            # EDICIÓN EN RENGLÓN
             elif st.session_state.trabajo_en_edicion == r_id:
                 with st.container(border=True):
                     st.markdown(f"**✏️ Editando Trabajo #{r_id} - {row['cliente']}**")
@@ -851,7 +897,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.session_state.trabajo_en_edicion = None
                             st.rerun()
 
-            # MODO C: RENGLÓN NORMAL DE LA TABLA
+            # FILA NORMAL INTEGRADA (CUADRÍCULA CERRADA)
             else:
                 b_class = badge_class_map.get(row['estado'], "badge-pen")
                 b_texto = ESTADO_BADGES.get(row['estado'], row['estado'])
@@ -860,27 +906,27 @@ if st.session_state.seccion_activa == "Trabajos":
                 saldo_val = float(row['saldo'] or 0)
                 color_sal = "#f87171" if saldo_val > 0 else "#4ade80"
                 
-                st.markdown('<div class="row-tabla-custom">', unsafe_allow_html=True)
+                st.markdown('<div class="row-grid-wrap">', unsafe_allow_html=True)
                 c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13 = st.columns(
-                    [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.3]
+                    [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.1], gap="small"
                 )
                 
-                with c1: st.markdown(f"**{row['cliente']}**")
-                with c2: st.markdown(f"<span style='color:#94a3b8; font-size:12.5px;'>{tel_str}</span>", unsafe_allow_html=True)
-                with c3: st.markdown(str(row['tipo_trabajo']))
-                with c4: st.markdown(f"<span style='color:#94a3b8; font-size:12.5px;'>{taller_str}</span>", unsafe_allow_html=True)
-                with c5: st.markdown(f"<span style='color:#94a3b8; font-size:12px;'>{row['fecha_carga_mostrar']}</span>", unsafe_allow_html=True)
-                with c6: st.markdown(f"<span style='font-size:12.5px;'>{row['fecha_entrega']}</span>", unsafe_allow_html=True)
-                with c7: st.markdown(f"<span class='badge-estado {b_class}'>{b_texto}</span>", unsafe_allow_html=True)
-                with c8: st.markdown(f"<div style='text-align:right; color:#94a3b8;'>{moneda}{float(row['costo_material'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c9: st.markdown(f"<div style='text-align:right; font-weight:700;'>{moneda}{float(row['precio_venta'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c10: st.markdown(f"<div style='text-align:right; color:#38bdf8;'>{moneda}{float(row['sena'] or 0):,.0f}</div>", unsafe_allow_html=True)
-                with c11: st.markdown(f"<div style='text-align:right; color:{color_sal}; font-weight:600;'>{moneda}{saldo_val:,.0f}</div>", unsafe_allow_html=True)
-                with c12: st.markdown(f"<div style='text-align:right; color:#10b981; font-weight:700;'>{moneda}{float(row['ganancia_calc'] or 0):,.0f}</div>", unsafe_allow_html=True)
+                with c1: st.markdown(f"<div class='celda-tabla'><b>{row['cliente']}</b></div>", unsafe_allow_html=True)
+                with c2: st.markdown(f"<div class='celda-tabla' style='color:#94a3b8;'>{tel_str}</div>", unsafe_allow_html=True)
+                with c3: st.markdown(f"<div class='celda-tabla'>{row['tipo_trabajo']}</div>", unsafe_allow_html=True)
+                with c4: st.markdown(f"<div class='celda-tabla' style='color:#94a3b8;'>{taller_str}</div>", unsafe_allow_html=True)
+                with c5: st.markdown(f"<div class='celda-tabla' style='color:#94a3b8;'>{row['fecha_carga_mostrar']}</div>", unsafe_allow_html=True)
+                with c6: st.markdown(f"<div class='celda-tabla'>{row['fecha_entrega']}</div>", unsafe_allow_html=True)
+                with c7: st.markdown(f"<div class='celda-tabla'><span class='badge-estado {b_class}'>{b_texto}</span></div>", unsafe_allow_html=True)
+                with c8: st.markdown(f"<div class='celda-tabla' style='justify-content:flex-end; color:#94a3b8;'>{moneda}{float(row['costo_material'] or 0):,.0f}</div>", unsafe_allow_html=True)
+                with c9: st.markdown(f"<div class='celda-tabla' style='justify-content:flex-end; font-weight:700;'>{moneda}{float(row['precio_venta'] or 0):,.0f}</div>", unsafe_allow_html=True)
+                with c10: st.markdown(f"<div class='celda-tabla' style='justify-content:flex-end; color:#38bdf8;'>{moneda}{float(row['sena'] or 0):,.0f}</div>", unsafe_allow_html=True)
+                with c11: st.markdown(f"<div class='celda-tabla' style='justify-content:flex-end; color:{color_sal}; font-weight:700;'>{moneda}{saldo_val:,.0f}</div>", unsafe_allow_html=True)
+                with c12: st.markdown(f"<div class='celda-tabla' style='justify-content:flex-end; color:#10b981; font-weight:700;'>{moneda}{float(row['ganancia_calc'] or 0):,.0f}</div>", unsafe_allow_html=True)
                 
-                # BOTONES DE ACCIÓN DEFINIDOS Y LEGIBLES
+                # CELDA DE ACCIONES CON LOS 3 BOTONES ALINEADOS
                 with c13:
-                    st.markdown('<div class="btn-accion-box">', unsafe_allow_html=True)
+                    st.markdown('<div class="celda-acciones">', unsafe_allow_html=True)
                     bc1, bc2, bc3 = st.columns([1, 1, 1], gap="small")
                     with bc1:
                         if st.button("✏️", key=f"btn_e_{r_id}", help="Editar este trabajo"):
@@ -908,6 +954,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
