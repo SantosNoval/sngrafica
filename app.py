@@ -351,11 +351,8 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* PÍLDORAS SUPERIORES */
-    div[data-testid="stButton"] > button,
-    div.row-widget.stButton > button,
-    button[data-testid="baseButton-secondary"],
-    button[kind="secondary"] {
+    /* PÍLDORAS DEL MENÚ SUPERIOR (IDENTIFICADAS) */
+    .top-nav div[data-testid="stButton"] > button {
         background-color: #161b26 !important;
         background: #161b26 !important;
         color: #e2e8f0 !important;
@@ -368,27 +365,13 @@ st.markdown("""
         transition: all 0.15s ease !important;
         -webkit-appearance: none !important;
     }
-    div[data-testid="stButton"] > button p,
-    div[data-testid="stButton"] > button span,
-    button[data-testid="baseButton-secondary"] p,
-    button[data-testid="baseButton-secondary"] span {
-        color: #e2e8f0 !important;
-        -webkit-text-fill-color: #e2e8f0 !important;
-    }
-    div[data-testid="stButton"] > button:hover {
+    .top-nav div[data-testid="stButton"] > button:hover {
         background-color: #242d3d !important;
         border-color: #3b82f6 !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
     }
-    div[data-testid="stButton"] > button:hover p,
-    div[data-testid="stButton"] > button:hover span {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
-    }
-    
-    div[data-testid="stButton"] > button[kind="primary"],
-    button[data-testid="baseButton-primary"] {
+    .top-nav div[data-testid="stButton"] > button[kind="primary"] {
         background: linear-gradient(135deg, #ef4444 0%, #f97316 100%) !important;
         color: #ffffff !important;
         -webkit-text-fill-color: #ffffff !important;
@@ -399,15 +382,33 @@ st.markdown("""
         font-weight: 700 !important;
         box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
     }
-    div[data-testid="stButton"] > button[kind="primary"] p,
-    div[data-testid="stButton"] > button[kind="primary"] span,
-    button[data-testid="baseButton-primary"] p,
-    button[data-testid="baseButton-primary"] span {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+
+    /* BOTONES DE ACCIÓN LATERALES (✏️, ↩️, 🗑️) - ESTILO LIMPIO Y DEFINIDO */
+    .btn-accion div[data-testid="stButton"] > button {
+        background-color: #161b26 !important;
+        border: 1px solid #2d3748 !important;
+        border-radius: 8px !important;
+        padding: 4px 6px !important;
+        height: 35px !important;
+        min-width: 35px !important;
+        font-size: 15px !important;
+        line-height: 1 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: all 0.15s ease !important;
+    }
+    .btn-accion div[data-testid="stButton"] > button:hover {
+        background-color: #242d3d !important;
+        border-color: #60a5fa !important;
+        transform: translateY(-1px);
+    }
+    .btn-accion div[data-testid="stButton"] > button[disabled] {
+        opacity: 0.25 !important;
+        border-color: #1e293b !important;
     }
 
-    /* TABLA NATIVA DE STREAMLIT (OSCURA Y DEFINIDA) */
+    /* TABLA NATIVA DE STREAMLIT */
     [data-testid="stDataFrame"] {
         color-scheme: dark !important;
         border-radius: 8px;
@@ -415,7 +416,7 @@ st.markdown("""
         border: 1px solid #1e293b;
     }
 
-    /* BADGES DE ESTADOS RESISTENTES A SAFARI */
+    /* BADGES DE ESTADOS */
     .badge-estado {
         display: inline-block;
         padding: 3px 8px;
@@ -594,7 +595,6 @@ SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Comp
 if 'seccion_activa' not in st.session_state:
     st.session_state.seccion_activa = "Trabajos"
 
-# Estados de control para la acción activa en Trabajos
 if 'trabajo_en_edicion' not in st.session_state:
     st.session_state.trabajo_en_edicion = None
 if 'trabajo_en_borrado' not in st.session_state:
@@ -605,6 +605,7 @@ with col_logo:
     st.markdown(f"<div style='font-size: 21px; font-weight: 800; color: #ffffff; padding-top: 4px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
 
 with col_pills:
+    st.markdown('<div class="top-nav">', unsafe_allow_html=True)
     p_cols = st.columns(len(SECCIONES))
     for i, s in enumerate(SECCIONES):
         btn_kind = "primary" if st.session_state.seccion_activa == s else "secondary"
@@ -614,6 +615,7 @@ with col_pills:
                 st.session_state.trabajo_en_edicion = None
                 st.session_state.trabajo_en_borrado = None
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 14px 0;'>", unsafe_allow_html=True)
 
@@ -688,7 +690,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 else:
                     st.error("Completá cliente, trabajo y precio de venta.")
 
-    # 2. PANEL DINÁMICO DE EDICIÓN O BORRADO (SE ABRE AL TOCAR EL BOTÓN AL LADO DE LA TABLA)
+    # 2. PANEL DINÁMICO DE EDICIÓN O BORRADO
     if st.session_state.trabajo_en_borrado is not None:
         t_id_borrar = st.session_state.trabajo_en_borrado
         t_data_del = df_todos_trabajos[df_todos_trabajos['id'] == t_id_borrar]
@@ -752,7 +754,7 @@ if st.session_state.seccion_activa == "Trabajos":
                             saldo_act = max(0.0, float(ed_vent) - float(ed_sen))
                             if IS_POSTGRES:
                                 run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv, sena=:sena, saldo=:sal WHERE id=:id",
-                                                {"c": ed_cli.strip(), "tel": ed_tel.strip(), "t": ed_trab.strip(), "te": ed_tall.strip(), "fe": str(ed_fe), "e": ed_est, "cm": float(ed_cost), "pv": float(ed_vent), "sena": float(ed_sen), "sal": float(saldo_act), "id": t_id_editar})
+                                                {"c": ed_cli.strip(), "tel": ed_tel.strip(), "t": ed_trabajo.strip(), "te": ed_tall.strip(), "fe": str(ed_fe), "e": ed_est, "cm": float(ed_cost), "pv": float(ed_vent), "sena": float(ed_sen), "sal": float(saldo_act), "id": t_id_editar})
                             else:
                                 run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=?, sena=?, saldo=? WHERE id=?",
                                                 (ed_cli.strip(), ed_tel.strip(), ed_trab.strip(), ed_tall.strip(), str(ed_fe), ed_est, float(ed_cost), float(ed_vent), float(ed_sen), float(saldo_act), t_id_editar))
@@ -837,8 +839,8 @@ if st.session_state.seccion_activa == "Trabajos":
 
         df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
         
-        # 3. TABLA ORIGINAL COMO ANTES + BOTONES AL LADO DERECHO DONDE MARCÓ EL USUARIO
-        col_tabla_izq, col_acciones_der = st.columns([10.5, 1.5])
+        # 3. TABLA ORIGINAL NATIVA + BOTONES AL LADO DERECHO BIEN ALINEADOS Y DEFINIDOS
+        col_tabla_izq, col_acciones_der = st.columns([10.2, 1.8], gap="medium")
         
         with col_tabla_izq:
             df_mostrar = df_trabajos_tabla.rename(columns={
@@ -859,14 +861,15 @@ if st.session_state.seccion_activa == "Trabajos":
             st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
         with col_acciones_der:
-            st.markdown("<div style='font-size:12px; font-weight:700; color:#94a3b8; text-align:center; padding-bottom:6px;'>Acciones</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:13px; font-weight:700; color:#cbd5e1; text-align:center; padding-bottom:8px;'>⚙️ Acciones</div>", unsafe_allow_html=True)
             for _, r_btn in df_trabajos_tabla.iterrows():
                 r_id = r_btn['id']
-                b_col1, b_col2, b_col3 = st.columns(3)
+                st.markdown('<div class="btn-accion">', unsafe_allow_html=True)
+                b_col1, b_col2, b_col3 = st.columns([1, 1, 1], gap="small")
                 
                 # Botón Lápiz (Editar)
                 with b_col1:
-                    if st.button("✏️", key=f"btn_lapiz_{r_id}", help="Editar este trabajo"):
+                    if st.button("✏️", key=f"btn_lapiz_{r_id}", help="Editar este trabajo", use_container_width=True):
                         st.session_state.trabajo_en_edicion = r_id
                         st.session_state.trabajo_en_borrado = None
                         st.rerun()
@@ -875,7 +878,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 with b_col2:
                     p_orig = r_btn.get('presupuesto_origen_id')
                     if pd.notna(p_orig) and int(p_orig) > 0:
-                        if st.button("↩️", key=f"btn_ret_{r_id}", help=f"Regresar al Presupuesto #{int(p_orig)}"):
+                        if st.button("↩️", key=f"btn_ret_{r_id}", help=f"Regresar a Presupuesto #{int(p_orig)}", use_container_width=True):
                             if IS_POSTGRES:
                                 run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :pid", {"pid": int(p_orig)})
                                 run_execute_raw("DELETE FROM trabajos WHERE id = :tid", {"tid": r_id})
@@ -885,14 +888,15 @@ if st.session_state.seccion_activa == "Trabajos":
                             st.success(f"Trabajo #{r_id} devuelto a Presupuesto #{int(p_orig)}.")
                             st.rerun()
                     else:
-                        st.button("↩️", key=f"btn_ret_dis_{r_id}", disabled=True, help="No proviene de un presupuesto")
+                        st.button("↩️", key=f"btn_ret_dis_{r_id}", disabled=True, help="No proviene de un presupuesto", use_container_width=True)
                         
                 # Botón Basurero (Borrar con confirmación)
                 with b_col3:
-                    if st.button("🗑️", key=f"btn_tacho_{r_id}", help="Borrar este trabajo"):
+                    if st.button("🗑️", key=f"btn_tacho_{r_id}", help="Borrar este trabajo", use_container_width=True):
                         st.session_state.trabajo_en_borrado = r_id
                         st.session_state.trabajo_en_edicion = None
                         st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
