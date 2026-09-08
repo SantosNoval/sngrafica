@@ -274,7 +274,7 @@ ESTADO_BADGES = {
     "Entregado y Cobrado": "🔵 Cobrado"
 }
 
-# ---------------- ESTILOS DARK MODE ULTRA WIDE ----------------
+# ---------------- ESTILOS DARK MODE COMPACTO Y ALINEADO ----------------
 st.markdown("""
 <style>
     :root, html, body {
@@ -290,15 +290,13 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif !important;
         -webkit-font-smoothing: antialiased !important;
     }
-    
-    /* PANTALLA ANCHA PARA APROVECHAR TODO EL MONITOR SIN DESPLAZAMIENTO HORIZONTAL */
     .block-container {
         padding-top: 0.8rem !important;
         padding-bottom: 2.5rem !important;
         max-width: 98% !important;
     }
 
-    /* DESPLEGABLES E INPUTS EN OSCURO */
+    /* CONTROLES E INPUTS */
     div[data-baseweb="select"] > div,
     div[data-baseweb="input"],
     .stSelectbox div[data-baseweb="select"] > div,
@@ -326,20 +324,6 @@ st.markdown("""
         color: #64748b !important;
         -webkit-text-fill-color: #64748b !important;
     }
-    ul[data-baseweb="menu"],
-    div[data-baseweb="popover"],
-    div[data-baseweb="popover"] div {
-        background-color: #111422 !important;
-        color: #f8fafc !important;
-        border-color: #1e293b !important;
-    }
-    li[data-baseweb="menu-item"] {
-        color: #f8fafc !important;
-        -webkit-text-fill-color: #f8fafc !important;
-    }
-    li[data-baseweb="menu-item"]:hover {
-        background-color: #1e293b !important;
-    }
 
     label[data-testid="stWidgetLabel"] p,
     label p,
@@ -365,7 +349,6 @@ st.markdown("""
         font-size: 13.5px !important;
         font-weight: 600 !important;
         transition: all 0.15s ease !important;
-        -webkit-appearance: none !important;
     }
     .top-nav div[data-testid="stButton"] > button:hover {
         background-color: #242d3d !important;
@@ -385,39 +368,46 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
     }
 
-    /* BOTONES DE ACCIÓN COMPACTOS Y ALINEADOS CON CADA RENGLÓN */
-    .action-row div[data-testid="stButton"] > button {
-        background-color: #111422 !important;
-        border: 1px solid #2d3748 !important;
+    /* FILAS DE LA TABLA INTEGRADAS: ESTILO GRILLA ORIGINAL */
+    .row-tabla-custom {
+        border-bottom: 1px solid #161f30;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        transition: background-color 0.12s ease;
+    }
+    .row-tabla-custom:hover {
+        background-color: #0b1120;
+    }
+
+    /* BOTONES DE ACCIÓN: DISEÑO CUADRADO, VISIBLE Y NÍTIDO */
+    .btn-accion-box div[data-testid="stButton"] > button {
+        background-color: #161f30 !important;
+        border: 1px solid #283548 !important;
         border-radius: 6px !important;
         padding: 0 !important;
         height: 32px !important;
-        min-width: 32px !important;
-        font-size: 14px !important;
+        width: 100% !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        transition: all 0.15s ease !important;
+        margin: 0 !important;
     }
-    .action-row div[data-testid="stButton"] > button:hover {
-        background-color: #1e293b !important;
+    .btn-accion-box div[data-testid="stButton"] > button p,
+    .btn-accion-box div[data-testid="stButton"] > button span {
+        font-size: 16px !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+    .btn-accion-box div[data-testid="stButton"] > button:hover {
+        background-color: #243247 !important;
         border-color: #60a5fa !important;
     }
-    .action-row div[data-testid="stButton"] > button[disabled] {
-        opacity: 0.2 !important;
+    .btn-accion-box div[data-testid="stButton"] > button[disabled] {
+        opacity: 0.15 !important;
         border-color: #1e293b !important;
-    }
-
-    /* FILAS DE LA TABLA INTEGRADAS */
-    .row-item {
-        display: flex;
-        align-items: center;
-        padding: 8px 10px;
-        border-bottom: 1px solid #1a2233;
-        font-size: 13.5px;
-    }
-    .row-item:hover {
-        background-color: #0b0f19;
+        background-color: transparent !important;
     }
 
     /* BADGES DE ESTADOS */
@@ -563,7 +553,7 @@ def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle, total, 
         [Paragraph(str(detalle), normal_style), Paragraph(f"{moneda}{total:,.2f}", bold_style)]
     ]
     t_items = Table(items_data, colWidths=[400, 140])
-    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-0), colors.HexColor("#15803d")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
+    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#15803d")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('ALIGN', (1,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     elements.append(t_items)
     elements.append(Spacer(1, 14))
     
@@ -642,7 +632,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# VISTA 1: TRABAJOS Y PEDIDOS (ANCHO TOTAL Y BOTONES INTEGRADOS)
+# VISTA 1: TRABAJOS Y PEDIDOS
 # ==========================================
 if st.session_state.seccion_activa == "Trabajos":
     df_todos_trabajos = fetch_data_cached("""
@@ -651,7 +641,7 @@ if st.session_state.seccion_activa == "Trabajos":
         ORDER BY fecha_entrega ASC, id DESC
     """)
     
-    # 1. CARGA DE NUEVO TRABAJO EN UN SOLO RENGLÓN COMPACTO
+    # CARGA DE NUEVO TRABAJO EN UN SOLO RENGLÓN COMPACTO
     with st.expander("➕ Cargar Nuevo Trabajo", expanded=False):
         with st.form("form_nuevo_trabajo_un_renglon", clear_on_submit=True):
             r_c1, r_c2, r_c3, r_c4, r_c5, r_c6, r_c7, r_c8, r_c9 = st.columns([1.6, 1.3, 1.8, 1.2, 1.1, 1.1, 1.1, 1.1, 1.1])
@@ -691,7 +681,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 else:
                     st.error("Completá cliente, trabajo y precio de venta.")
 
-    # 2. VIÑETAS DE ESTADOS
+    # VIÑETAS DE ESTADOS
     st.markdown("""
     <div style='background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px 0; font-size: 13px;'>
         <span style='color: #8b949e; font-weight: 700;'>ESTADOS:&nbsp;&nbsp;</span>
@@ -734,7 +724,6 @@ if st.session_state.seccion_activa == "Trabajos":
         with col_filtro3:
             busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
 
-        # Filtros
         if estado_seleccionado != "Todos":
             df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
             
@@ -745,7 +734,6 @@ if st.session_state.seccion_activa == "Trabajos":
                 df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
             ]
 
-        # Ordenamiento
         if criterio_orden == "Fecha Entrega (Próximos primero)":
             df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_entrega", ascending=True)
         elif criterio_orden == "Fecha Carga (Más recientes)":
@@ -771,7 +759,7 @@ if st.session_state.seccion_activa == "Trabajos":
             "Entregado y Cobrado": "badge-cob"
         }
 
-        # 3. ENCABEZADO INTEGRADO DE LA TABLA (ANCHO COMPLETO CON ACCIONES)
+        # ENCABEZADO INTEGRADO DE LA TABLA
         c_h1, c_h2, c_h3, c_h4, c_h5, c_h6, c_h7, c_h8, c_h9, c_h10, c_h11, c_h12, c_h13 = st.columns(
             [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.3]
         )
@@ -789,9 +777,9 @@ if st.session_state.seccion_activa == "Trabajos":
         with c_h12: st.markdown(f"<div style='text-align:right;'><b>Ganancia</b></div>", unsafe_allow_html=True)
         with c_h13: st.markdown("<div style='text-align:center;'><b>⚙️ Acciones</b></div>", unsafe_allow_html=True)
         
-        st.markdown("<hr style='border:none; border-top:1.5px solid #2d3748; margin:4px 0 8px 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='border:none; border-top:1.5px solid #2d3748; margin:2px 0 6px 0;'>", unsafe_allow_html=True)
 
-        # 4. RENGLONES CON LOS 3 BOTONES INTEGRADOS AL FINAL
+        # RENGLONES INTEGRADOS
         for _, row in df_trabajos_tabla.iterrows():
             r_id = row['id']
             
@@ -872,6 +860,7 @@ if st.session_state.seccion_activa == "Trabajos":
                 saldo_val = float(row['saldo'] or 0)
                 color_sal = "#f87171" if saldo_val > 0 else "#4ade80"
                 
+                st.markdown('<div class="row-tabla-custom">', unsafe_allow_html=True)
                 c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13 = st.columns(
                     [1.5, 1.1, 1.8, 1.1, 1.1, 0.9, 1.1, 0.8, 0.8, 0.8, 0.8, 0.8, 1.3]
                 )
@@ -889,19 +878,19 @@ if st.session_state.seccion_activa == "Trabajos":
                 with c11: st.markdown(f"<div style='text-align:right; color:{color_sal}; font-weight:600;'>{moneda}{saldo_val:,.0f}</div>", unsafe_allow_html=True)
                 with c12: st.markdown(f"<div style='text-align:right; color:#10b981; font-weight:700;'>{moneda}{float(row['ganancia_calc'] or 0):,.0f}</div>", unsafe_allow_html=True)
                 
-                # LOS 3 BOTONES INTEGRADOS AL FINAL DEL RENGLÓN
+                # BOTONES DE ACCIÓN DEFINIDOS Y LEGIBLES
                 with c13:
-                    st.markdown('<div class="action-row">', unsafe_allow_html=True)
+                    st.markdown('<div class="btn-accion-box">', unsafe_allow_html=True)
                     bc1, bc2, bc3 = st.columns([1, 1, 1], gap="small")
                     with bc1:
-                        if st.button("✏️", key=f"btn_e_{r_id}", help="Editar este trabajo", use_container_width=True):
+                        if st.button("✏️", key=f"btn_e_{r_id}", help="Editar este trabajo"):
                             st.session_state.trabajo_en_edicion = r_id
                             st.session_state.trabajo_en_borrado = None
                             st.rerun()
                     with bc2:
                         p_orig = row.get('presupuesto_origen_id')
                         if pd.notna(p_orig) and int(p_orig) > 0:
-                            if st.button("↩️", key=f"btn_r_{r_id}", help=f"Regresar a Presupuesto #{int(p_orig)}", use_container_width=True):
+                            if st.button("↩️", key=f"btn_r_{r_id}", help=f"Regresar a Presupuesto #{int(p_orig)}"):
                                 if IS_POSTGRES:
                                     run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :pid", {"pid": int(p_orig)})
                                     run_execute_raw("DELETE FROM trabajos WHERE id = :tid", {"tid": r_id})
@@ -911,15 +900,14 @@ if st.session_state.seccion_activa == "Trabajos":
                                 st.success(f"Trabajo #{r_id} devuelto a Presupuesto #{int(p_orig)}.")
                                 st.rerun()
                         else:
-                            st.button("↩️", key=f"btn_r_dis_{r_id}", disabled=True, help="No proviene de un presupuesto", use_container_width=True)
+                            st.button("↩️", key=f"btn_r_dis_{r_id}", disabled=True, help="No proviene de un presupuesto")
                     with bc3:
-                        if st.button("🗑️", key=f"btn_d_{r_id}", help="Borrar este trabajo", use_container_width=True):
+                        if st.button("🗑️", key=f"btn_d_{r_id}", help="Borrar este trabajo"):
                             st.session_state.trabajo_en_borrado = r_id
                             st.session_state.trabajo_en_edicion = None
                             st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
-                    
-            st.markdown("<hr style='border:none; border-top:1px solid #141b28; margin:3px 0;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Todavía no hay trabajos cargados en el sistema.")
 
