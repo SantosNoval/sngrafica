@@ -27,8 +27,12 @@ DB_URL = st.secrets.get("DATABASE_URL", None) if hasattr(st, "secrets") else Non
 def get_db_engine(url):
     if not url:
         return None
+    # Forzar el controlador psycopg2 compatible con tu entorno
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        
     return create_engine(
         url,
         pool_size=10,
