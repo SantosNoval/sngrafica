@@ -1631,6 +1631,9 @@ elif st.session_state.seccion_activa == "Compras":
 # ==========================================
 # VISTA 7: BALANCE Y FINANZAS
 # ==========================================
+# ==========================================
+# VISTA 7: BALANCE Y FINANZAS
+# ==========================================
 elif st.session_state.seccion_activa == "Balance":
     df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas, SUM(costo_material) as total_costos_prod FROM trabajos")
     df_gastos_compras = fetch_data_cached("SELECT SUM(costo) as total_compras FROM compras")
@@ -1639,22 +1642,22 @@ elif st.session_state.seccion_activa == "Balance":
     total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
     total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
     
-    total_egresos_completo = total_costos_produccion + total_compras
-    ganancia_neta = total_ventas - total_egresos_completo
-    margen = (ganancia_neta / total_ventas * 100) if total_ventas > 0 else 0.0
+    # Ganancia real basada en efectivo/compras a proveedores reales
+    ganancia_neta_real = total_ventas - total_compras
+    margen_real = (ganancia_neta_real / total_ventas * 100) if total_ventas > 0 else 0.0
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     kpi1.metric(f"Ingresos Totales (Ventas)", f"{moneda}{total_ventas:,.2f}")
-    kpi2.metric(f"Egresos Totales (Gastos)", f"{moneda}{total_egresos_completo:,.2f}")
-    kpi3.metric(f"Ganancia Neta Real", f"{moneda}{ganancia_neta:,.2f}", delta=f"{moneda}{ganancia_neta:,.2f}")
-    kpi4.metric("Margen Neto", f"{margen:.1f}%")
+    kpi2.metric(f"Egresos Reales (Compras)", f"{moneda}{total_compras:,.2f}")
+    kpi3.metric(f"Ganancia Neta Real", f"{moneda}{ganancia_neta_real:,.2f}", delta=f"{moneda}{ganancia_neta_real:,.2f}")
+    kpi4.metric("Margen Neto", f"{margen_real:.1f}%")
 
     st.divider()
     
-    st.markdown("### 🔍 Desglose Detallado de Egresos y Caja")
+    st.markdown("### 🔍 Desglose Financiero del Taller")
     col_egr1, col_egr2, col_egr3 = st.columns(3)
-    col_egr1.metric("🛠️ Costos de Producción / Talleres", f"{moneda}{total_costos_produccion:,.2f}")
-    col_egr2.metric("🧾 Facturas de Compras / Insumos", f"{moneda}{total_compras:,.2f}")
+    col_egr1.metric("🛠️ Costos Teóricos de Producción (Trabajos)", f"{moneda}{total_costos_produccion:,.2f}", help="Suma de los costos estimados asignados a cada trabajo.")
+    col_egr2.metric("🧾 Gastos Reales en Proveedores (Compras)", f"{moneda}{total_compras:,.2f}", help="Facturas reales pagadas a proveedores de insumos.")
     
     df_pagos_metodo = fetch_data_cached("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
     efectivo_en_mano = 0.0
@@ -1668,20 +1671,20 @@ elif st.session_state.seccion_activa == "Balance":
             else:
                 banco_mp += monto
                 
-    col_egr3.metric("💵 Caja Taller (Efectivo)", f"{moneda}{efectivo_en_mano:,.2f}")
+    col_egr3.metric("💵 Ingresos en Efectivo (Cobrado)", f"{moneda}{efectivo_en_mano:,.2f}")
 
     st.divider()
     
     col_g1, col_g2 = st.columns(2)
     with col_g1:
-        st.markdown("**Comparativa: Ventas vs Egresos Totales**")
+        st.markdown("**Comparativa: Ventas vs Compras y Ganancia**")
         df_comp = pd.DataFrame({
-            "Concepto": ["Ingresos (Ventas)", "Costos Producción", "Facturas Compras", "Ganancia Neta"],
-            f"Monto ({moneda})": [total_ventas, total_costos_produccion, total_compras, ganancia_neta]
+            "Concepto": ["Ingresos (Ventas)", "Compras Proveedores", "Ganancia Neta Real"],
+            f"Monto ({moneda})": [total_ventas, total_compras, ganancia_neta_real]
         })
         fig_bar = px.bar(
             df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
-            color_discrete_map={"Ingresos (Ventas)": "#3b82f6", "Costos Producción": "#f59e0b", "Facturas Compras": "#ef4444", "Ganancia Neta": "#10b981"},
+            color_discrete_map={"Ingresos (Ventas)": "#3b82f6", "Compras Proveedores": "#ef4444", "Ganancia Neta Real": "#10b981"},
             template="plotly_dark"
         )
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -1690,7 +1693,7 @@ elif st.session_state.seccion_activa == "Balance":
         st.markdown("**Distribución de Trabajos por Rubro**")
         df_tipos = fetch_data_cached("SELECT tipo_trabajo AS Tipo, COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
         if not df_tipos.empty:
-            fig_pie = px.pie(df_tipos, values="cantidad", names="tipo", hole=0.4, template="plotly_dark")
+            fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # ==========================================
