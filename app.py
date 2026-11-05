@@ -788,24 +788,30 @@ if st.session_state.seccion_activa == "Trabajos":
             sel_trab_bol = st.selectbox("Seleccionar Trabajo a Facturar:", list(opciones_emitir_bol.keys()), key="sel_t_bol_directo")
             t_data_sel = opciones_emitir_bol[sel_trab_bol]
             
-            if "df_items_boleta_trabajo" not in st.session_state:
-                st.session_state.df_items_boleta_trabajo = pd.DataFrame([
-                    {"Detalle": str(t_data_sel.get('tipo_trabajo') or 'Trabajo Gráfico'), "Cantidad": 1.0, "Precio Unitario": float(t_data_sel.get('precio_venta') or 0.0)}
+            # Clave única por ID para que se recargue automáticamente al cambiar de trabajo
+            key_session_df = f"df_items_boleta_trabajo_{t_data_sel['id']}"
+            if key_session_df not in st.session_state:
+                st.session_state[key_session_df] = pd.DataFrame([
+                    {
+                        "Detalle": str(t_data_sel.get('tipo_trabajo') or 'Trabajo Gráfico'), 
+                        "Cantidad": 1.0, 
+                        "Precio Unitario": float(t_data_sel.get('precio_venta') or 0.0)
+                    }
                 ])
 
             col_eb1, col_eb2 = st.columns(2)
             with col_eb1:
-                eb_cli = st.text_input("Cliente", value=str(t_data_sel['cliente']), key="eb_cli_val")
-                eb_tel = st.text_input("Teléfono", value=str(t_data_sel.get('telefono') or ''), key="eb_tel_val")
+                eb_cli = st.text_input("Cliente", value=str(t_data_sel['cliente']), key=f"eb_cli_val_{t_data_sel['id']}")
+                eb_tel = st.text_input("Teléfono", value=str(t_data_sel.get('telefono') or ''), key=f"eb_tel_val_{t_data_sel['id']}")
             with col_eb2:
-                eb_fec = st.date_input("Fecha de Boleta", value=date.today(), key="eb_fec_val")
-                eb_met = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"], key="eb_met_val")
+                eb_fec = st.date_input("Fecha de Boleta", value=date.today(), key=f"eb_fec_val_{t_data_sel['id']}")
+                eb_met = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"], key=f"eb_met_val_{t_data_sel['id']}")
             
             st.markdown("**Ítems / Conceptos a Facturar:**")
-            st.caption("Podés agregar múltiples renglones con `+`. El sistema calcula el total automáticamente.")
+            st.caption("Podés agregar múltiples renglones con `+`, modificar la cantidad y el precio unitario a gusto.")
             
             edited_bol_trab = st.data_editor(
-                st.session_state.df_items_boleta_trabajo,
+                st.session_state[key_session_df],
                 num_rows="dynamic",
                 use_container_width=True,
                 column_config={
@@ -813,7 +819,7 @@ if st.session_state.seccion_activa == "Trabajos":
                     "Cantidad": st.column_config.NumberColumn("Cantidad / Unidades", min_value=0.01, default=1.0, step=1.0),
                     "Precio Unitario": st.column_config.NumberColumn(f"Precio Unitario ({moneda})", min_value=0.0, default=0.0, step=100.0)
                 },
-                key="editor_items_boleta_desde_trabajo"
+                key=f"editor_items_boleta_desde_trabajo_{t_data_sel['id']}"
             )
             
             df_bol_trab_calc = edited_bol_trab.dropna(subset=["Detalle"]).copy() if not edited_bol_trab.empty else pd.DataFrame()
@@ -829,14 +835,14 @@ if st.session_state.seccion_activa == "Trabajos":
             with col_eb_m1:
                 st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#60a5fa;'>Total Calculado:<br/><span style='font-size:18px;'>{moneda}{total_calculado_bol_trab:,.2f}</span></div>", unsafe_allow_html=True)
             with col_eb_m2:
-                eb_sen = st.number_input(f"Abonado / Seña ({moneda}) *", min_value=0.0, value=float(t_data_sel.get('sena') or 0.0), step=100.0, key="eb_sen_val")
+                eb_sen = st.number_input(f"Abonado / Seña ({moneda}) *", min_value=0.0, value=float(t_data_sel.get('sena') or 0.0), step=100.0, key=f"eb_sen_val_{t_data_sel['id']}")
             with col_eb_m3:
                 saldo_preview_bt = max(0.0, total_calculado_bol_trab - eb_sen)
                 color_s_bt = "#ef4444" if saldo_preview_bt > 0 else "#10b981"
                 st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:{color_s_bt};'>Saldo Pendiente:<br/><span style='font-size:18px;'>{moneda}{saldo_preview_bt:,.2f}</span></div>", unsafe_allow_html=True)
                 
             st.write("")
-            btn_generar_bol_ok = st.button("💾 Guardar y Emitir Boleta", type="primary", use_container_width=True)
+            btn_generar_bol_ok = st.button("💾 Guardar y Emitir Boleta", type="primary", use_container_width=True, key=f"btn_emitir_b_{t_data_sel['id']}")
             if btn_generar_bol_ok:
                 if eb_cli.strip() and total_calculado_bol_trab > 0:
                     lista_items_bt = []
