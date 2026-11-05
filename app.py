@@ -271,7 +271,7 @@ ESTADOS_TRABAJO = ["Pendiente", "En Taller Externo", "Listo para Armar", "Listo 
 ESTADO_BADGES = {
     "Pendiente": "🔴 Pendiente",
     "En Taller Externo": "🟣 En Imprenta",
-    "Listo para Armار": "🟡 Para Armar",
+    "Listo para Armar": "🟡 Para Armar",
     "Listo para Entrega": "🟢 Listo Retiro",
     "Entregado y Cobrado": "🔵 Cobrado"
 }
@@ -427,4 +427,1420 @@ def generar_pdf_presupuesto(empresa, p_id, fecha, cliente, telefono, tipo, detal
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     elements = []
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(name='TitleStyle', fontName='Helvetica-Bold', fontSize
+    title_style = ParagraphStyle(
+        name='TitleStyle', fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=colors.HexColor("#1e3a8a")
+    )
+    sub_style = ParagraphStyle(
+        name='SubStyle', fontName='Helvetica', fontSize=11, leading=14, textColor=colors.HexColor("#475569")
+    )
+    bold_style = ParagraphStyle(
+        name='BoldStyle', fontName='Helvetica-Bold', fontSize=10, leading=13
+    )
+    normal_style = ParagraphStyle(
+        name='NormalStyle', fontName='Helvetica', fontSize=10, leading=13
+    )
+    
+    header_data = [[Paragraph(f"<b>{empresa}</b>", title_style), Paragraph(f"<b>PRESUPUESTO #{p_id:04d}</b><br/>Fecha: {fecha}", sub_style)]]
+    t_header = Table(header_data, colWidths=[320, 220])
+    t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (1,0), (1,0), 'RIGHT'), ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor("#1e3a8a")), ('BOTTOMPADDING', (0,0), (-1,-1), 8)]))
+    elements.append(t_header)
+    elements.append(Spacer(1, 14))
+    
+    client_data = [
+        [Paragraph("<b>Cliente:</b>", bold_style), Paragraph(str(cliente), normal_style), Paragraph("<b>Teléfono:</b>", bold_style), Paragraph(str(telefono), normal_style)],
+        [Paragraph("<b>Rubro / Tipo:</b>", bold_style), Paragraph(str(tipo), normal_style), Paragraph("", normal_style), Paragraph("", normal_style)]
+    ]
+    t_client = Table(client_data, colWidths=[90, 200, 70, 180])
+    t_client.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f8fafc")), ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")), ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")), ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5)]))
+    elements.append(t_client)
+    elements.append(Spacer(1, 14))
+    
+    items = parse_items_json(detalle_raw, cant_fallback, unitario_fallback)
+    items_data = [[Paragraph("<b>Detalle / Especificaciones</b>", bold_style), Paragraph("<b>Cant.</b>", bold_style), Paragraph("<b>P. Unitario</b>", bold_style), Paragraph("<b>Total</b>", bold_style)]]
+    
+    for it in items:
+        d_name = str(it.get("detalle", ""))
+        c_val = float(it.get("cantidad", 1.0))
+        pu_val = float(it.get("precio_unitario", 0.0))
+        row_tot = c_val * pu_val
+        items_data.append([
+            Paragraph(d_name, normal_style),
+            Paragraph(f"{c_val:,.0f}", normal_style),
+            Paragraph(f"{moneda}{pu_val:,.2f}", normal_style),
+            Paragraph(f"{moneda}{row_tot:,.2f}", bold_style)
+        ])
+        
+    t_items = Table(items_data, colWidths=[280, 60, 100, 100])
+    t_items.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e3a8a")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
+        ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6)
+    ]))
+    elements.append(t_items)
+    elements.append(Spacer(1, 14))
+    
+    tot_style = ParagraphStyle(name='Tot', fontName='Helvetica-Bold', fontSize=12, textColor=colors.HexColor("#1e3a8a"), alignment=2)
+    total_data = [["", Paragraph(f"<b>TOTAL: {moneda}{total:,.2f}</b>", tot_style)]]
+    t_tot = Table(total_data, colWidths=[340, 200])
+    t_tot.setStyle(TableStyle([('BACKGROUND', (1,0), (1,0), colors.HexColor("#f1f5f9")), ('BOX', (1,0), (1,0), 1, colors.HexColor("#1e3a8a")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
+    elements.append(t_tot)
+    elements.append(Spacer(1, 20))
+    
+    pie_p_style = ParagraphStyle(name='Pie', alignment=1)
+    elements.append(Paragraph(f"<font size='8' color='#64748b'>{pie_txt_custom}<br/>¡Gracias por consultarnos!</font>", pie_p_style))
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def generar_pdf_boleta(empresa, b_id, fecha, cliente, telefono, detalle_raw, total, sena, saldo, alias_b, cbu_b, titular_b, metodo):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    elements = []
+    title_style = ParagraphStyle(name='TitleStyle', fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=colors.HexColor("#15803d"))
+    sub_style = ParagraphStyle(name='SubStyle', fontName='Helvetica', fontSize=11, leading=14, textColor=colors.HexColor("#475569"))
+    bold_style = ParagraphStyle(name='BoldStyle', fontName='Helvetica-Bold', fontSize=10, leading=13)
+    normal_style = ParagraphStyle(name='NormalStyle', fontName='Helvetica', fontSize=10, leading=13)
+    
+    header_data = [[Paragraph(f"<b>{empresa}</b>", title_style), Paragraph(f"<b>BOLETA DE PAGO #{b_id:04d}</b><br/>Fecha: {fecha}", sub_style)]]
+    t_header = Table(header_data, colWidths=[320, 220])
+    t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('ALIGN', (1,0), (1,0), 'RIGHT'), ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor("#15803d")), ('BOTTOMPADDING', (0,0), (-1,-1), 8)]))
+    elements.append(t_header)
+    elements.append(Spacer(1, 14))
+    
+    client_data = [[Paragraph("<b>Cliente:</b>", bold_style), Paragraph(str(cliente), normal_style), Paragraph("<b>Teléfono:</b>", bold_style), Paragraph(str(telefono), normal_style)]]
+    t_client = Table(client_data, colWidths=[90, 200, 70, 180])
+    t_client.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f0fdf4")), ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#86efac")), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
+    elements.append(t_client)
+    elements.append(Spacer(1, 14))
+    
+    items = parse_items_json(detalle_raw, 1.0, total)
+    items_data = [[Paragraph("<b>Detalle del Trabajo / Ítems</b>", bold_style), Paragraph("<b>Cant.</b>", bold_style), Paragraph("<b>P. Unitario</b>", bold_style), Paragraph("<b>Total</b>", bold_style)]]
+    
+    for it in items:
+        d_nom = str(it.get("detalle", ""))
+        c_val = float(it.get("cantidad", 1.0))
+        pu_val = float(it.get("precio_unitario", 0.0))
+        r_tot = c_val * pu_val if pu_val > 0 else total
+        items_data.append([
+            Paragraph(d_nom, normal_style),
+            Paragraph(f"{c_val:,.0f}", normal_style),
+            Paragraph(f"{moneda}{pu_val:,.2f}", normal_style),
+            Paragraph(f"{moneda}{r_tot:,.2f}", bold_style)
+        ])
+
+    t_items = Table(items_data, colWidths=[280, 60, 100, 100])
+    t_items.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#15803d")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (2,0), (-1,-1), 'RIGHT'),
+        ('ALIGN', (3,0), (-1,-1), 'RIGHT'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6)
+    ]))
+    elements.append(t_items)
+    elements.append(Spacer(1, 14))
+    
+    saldo_style_obj = ParagraphStyle(name='Saldo', fontName='Helvetica-Bold', fontSize=11, alignment=0)
+    pago_data = [
+        ["", Paragraph(f"Total Trabajo: <b>{moneda}{total:,.2f}</b>", normal_style)],
+        ["", Paragraph(f"<font color='#15803d'>Abonado ({metodo}): <b>{moneda}{sena:,.2f}</b></font>", normal_style)],
+        ["", Paragraph(f"<font color='#b91c1c'><b>SALDO PENDIENTE: {moneda}{saldo:,.2f}</b></font>", saldo_style_obj)]
+    ]
+    t_pago = Table(pago_data, colWidths=[320, 220])
+    t_pago.setStyle(TableStyle([('BACKGROUND', (1,0), (1,-1), colors.HexColor("#f8fafc")), ('BOX', (1,0), (-1,-1), 1, colors.HexColor("#cbd5e1")), ('ALIGN', (1,0), (1,-1), 'RIGHT'), ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4)]))
+    elements.append(t_pago)
+    elements.append(Spacer(1, 16))
+    
+    if alias_b or cbu_b:
+        datos_banco = f"<b>DATOS DE TRANSFERENCIA:</b><br/>"
+        if alias_b: datos_banco += f"<b>Alias:</b> {alias_b} &nbsp;&nbsp;| &nbsp;&nbsp;"
+        if cbu_b: datos_banco += f"<b>CBU:</b> {cbu_b} &nbsp;&nbsp;| &nbsp;&nbsp;"
+        if titular_b: datos_banco += f"<b>Titular:</b> {titular_b}"
+        banco_p_style = ParagraphStyle(name='Banco', alignment=1)
+        elements.append(Paragraph(f"<font size='9' color='#1e3a8a'>{datos_banco}</font>", banco_p_style))
+        elements.append(Spacer(1, 10))
+
+    pie_b_style = ParagraphStyle(name='PieB', alignment=1)
+    elements.append(Paragraph("<font size='8' color='#64748b'>Comprobante de entrega y registro de pago interno.<br/>¡Muchas gracias por su compra!</font>", pie_b_style))
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# ---------------- BARRA HORIZONTAL DE PÍLDORAS ----------------
+SECCIONES = ["Trabajos", "Presupuestos", "Boletas", "Clientes", "Insumos", "Compras", "Balance", "Ajustes"]
+
+if 'seccion_activa' not in st.session_state:
+    st.session_state.seccion_activa = "Trabajos"
+
+col_logo, col_pills = st.columns([1.3, 7])
+with col_logo:
+    st.markdown(f"<div style='font-size: 21px; font-weight: 800; color: #ffffff; padding-top: 4px; white-space: nowrap;'>⚡ {titulo_actual}</div>", unsafe_allow_html=True)
+
+with col_pills:
+    st.markdown('<div class="top-nav">', unsafe_allow_html=True)
+    p_cols = st.columns(len(SECCIONES))
+    for i, s in enumerate(SECCIONES):
+        btn_kind = "primary" if st.session_state.seccion_activa == s else "secondary"
+        if p_cols[i].button(s, key=f"pill_{s}", type=btn_kind, use_container_width=True):
+            if st.session_state.seccion_activa != s:
+                st.session_state.seccion_activa = s
+                st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("<hr style='border: none; border-top: 1px solid #1e293b; margin: 8px 0 14px 0;'>", unsafe_allow_html=True)
+
+# ---------------- HERO DINÁMICO ----------------
+HERO_INFO = {
+    "Trabajos": ("Gestión de Trabajos y Producción", "Control de pedidos en taller, cálculo de señas, saldos y ganancias."),
+    "Presupuestos": ("Emisión de Presupuestos", "Cotizaciones con múltiples renglones, cálculo de materiales, ganancia estimada y pase a taller."),
+    "Boletas": ("Comprobantes y Boletas de Pago", "Detalle de múltiples productos, unidades, precios, señas y saldos automáticos."),
+    "Clientes": ("Directorio e Historial de Clientes", "Seguimiento completo de pedidos, presupuestos, saldos y contacto directo."),
+    "Insumos": ("Catálogo de Materiales y Márgenes", "Costos unitarios y calculadora inteligente con multiplicador de ganancia."),
+    "Compras": ("Registro de Facturas y Proveedores", "Control de gastos en materiales e insumos de imprenta renglón por renglón."),
+    "Balance": ("Rendimiento Financiero y Caja", "Ingresos, egresos (costos de producción + compras) y balance neto."),
+    "Ajustes": ("Configuración del Taller", "Personalización de datos fiscales, bancarios, mensajes de WhatsApp y categorías.")
+}
+
+t_hero, sub_hero = HERO_INFO.get(st.session_state.seccion_activa, ("SN Gráfica", subtitulo_actual))
+
+st.markdown(f"""
+<div class="hero-container">
+    <div class="hero-title">{t_hero}</div>
+    <div class="hero-subtitle">{sub_hero}</div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# VISTA 1: TRABAJOS Y PEDIDOS
+# ==========================================
+if st.session_state.seccion_activa == "Trabajos":
+    df_todos_trabajos = fetch_data_cached("""
+        SELECT id, cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo, presupuesto_origen_id 
+        FROM trabajos 
+        ORDER BY fecha_entrega ASC, id DESC
+    """)
+    
+    with st.expander("➕ Cargar Nuevo Trabajo", expanded=False):
+        with st.form("form_nuevo_trabajo", clear_on_submit=True):
+            col_t1, col_t2 = st.columns(2)
+            with col_t1:
+                nuevo_cli = st.text_input("Nombre del Cliente *")
+                nuevo_tel = st.text_input("Teléfono / WhatsApp (ej: 54911...)")
+                nuevo_trabajo = st.text_input("Trabajo / Descripción *")
+            with col_t2:
+                nuevo_taller = st.text_input("Imprenta / Taller Tercerizado (Opcional)", placeholder="Ej: Imprenta Central")
+                nuevo_est = st.selectbox("Estado Inicial", ESTADOS_TRABAJO, key="n_est")
+                col_sub_f1, col_sub_f2 = st.columns(2)
+                with col_sub_f1:
+                    nuevo_fcarga = st.date_input("Fecha Carga", value=date.today(), key="n_fc")
+                with col_sub_f2:
+                    nuevo_fentrega = st.date_input("Fecha Entrega", value=date.today(), key="n_fe")
+            
+            col_m1, col_m2, col_m3 = st.columns(3)
+            with col_m1:
+                nuevo_costo = st.number_input(f"Costo Producción ({moneda})", min_value=0.0, step=100.0, key="n_costo")
+            with col_m2:
+                nuevo_precio = st.number_input(f"Precio Venta Final ({moneda}) *", min_value=0.0, step=100.0, key="n_precio")
+            with col_m3:
+                nuevo_sena = st.number_input(f"Seña / Abonado ({moneda})", min_value=0.0, step=100.0, key="n_sena", help="Monto abonado como seña.")
+            
+            guardar_nuevo = st.form_submit_button("Guardar Trabajo", use_container_width=True)
+            if guardar_nuevo:
+                if nuevo_cli.strip() and nuevo_trabajo.strip() and nuevo_precio > 0:
+                    hora_actual_str = datetime.now().strftime("%H:%M")
+                    saldo_inicial = max(0.0, float(nuevo_precio) - float(nuevo_sena))
+                    if IS_POSTGRES:
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv, :sena, :sal)",
+                                        {"c": nuevo_cli.strip(), "tel": nuevo_tel.strip(), "t": nuevo_trabajo.strip(), "te": nuevo_taller.strip(), "fc": str(nuevo_fcarga), "hc": hora_actual_str, "fe": str(nuevo_fentrega), "e": nuevo_est, "cm": float(nuevo_costo), "pv": float(nuevo_precio), "sena": float(nuevo_sena), "sal": float(saldo_inicial)})
+                    else:
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (nuevo_cli.strip(), nuevo_tel.strip(), nuevo_trabajo.strip(), nuevo_taller.strip(), str(nuevo_fcarga), hora_actual_str, str(nuevo_fentrega), nuevo_est, float(nuevo_costo), float(nuevo_precio), float(nuevo_sena), float(saldo_inicial)))
+                    st.success("¡Trabajo guardado con éxito!")
+                    st.rerun()
+                else:
+                    st.error("Completá cliente, trabajo y precio de venta.")
+
+    col_t_act1, col_t_act2, col_t_act3 = st.columns(3)
+    with col_t_act1:
+        with st.expander("✏️ Modificar Trabajo", expanded=False):
+            if not df_todos_trabajos.empty:
+                opciones_activos = {
+                    f"#{row['id']} - {row['cliente']} ({row['tipo_trabajo']})": row['id']
+                    for _, row in df_todos_trabajos.iterrows()
+                }
+                sel_mod = st.selectbox("Seleccionar para editar:", list(opciones_activos.keys()), key="sel_mod_trab")
+                id_mod = opciones_activos[sel_mod]
+                datos_sel = df_todos_trabajos[df_todos_trabajos['id'] == id_mod].iloc[0]
+                
+                try: fc_val = datetime.strptime(str(datos_sel['fecha_carga']), "%Y-%m-%d").date()
+                except Exception: fc_val = date.today()
+                try: fe_val = datetime.strptime(str(datos_sel['fecha_entrega']), "%Y-%m-%d").date()
+                except Exception: fe_val = date.today()
+                hora_existente = str(datos_sel.get('hora_carga') or '')
+
+                with st.form(f"form_mod_{id_mod}"):
+                    col_ed1, col_ed2 = st.columns(2)
+                    with col_ed1:
+                        ed_cliente = st.text_input("Cliente *", value=str(datos_sel['cliente']))
+                        ed_tel = st.text_input("Teléfono / WhatsApp", value=str(datos_sel.get('telefono') or ''))
+                        ed_trabajo = st.text_input("Trabajo / Descripción *", value=str(datos_sel['tipo_trabajo']))
+                    with col_ed2:
+                        ed_taller = st.text_input("Imprenta Tercerizada", value=str(datos_sel.get('taller_externo') or ''))
+                        idx_e = ESTADOS_TRABAJO.index(datos_sel['estado']) if datos_sel['estado'] in ESTADOS_TRABAJO else 0
+                        ed_estado = st.selectbox("Estado del Pedido", ESTADOS_TRABAJO, index=idx_e)
+                        col_mfc1, col_mfc2 = st.columns(2)
+                        with col_mfc1:
+                            ed_fc = st.date_input("Fecha Carga", value=fc_val)
+                        with col_mfc2:
+                            ed_hc = st.text_input("Hora Carga (HH:MM)", value=hora_existente if hora_existente else datetime.now().strftime("%H:%M"))
+                        ed_fe = st.date_input("Fecha Entrega", value=fe_val)
+                        
+                    col_edm1, col_edm2, col_edm3 = st.columns(3)
+                    with col_edm1:
+                        ed_costo = st.number_input(f"Costo Producción ({moneda})", min_value=0.0, value=float(datos_sel['costo_material'] or 0.0), step=100.0)
+                    with col_edm2:
+                        ed_precio = st.number_input(f"Precio Venta ({moneda}) *", min_value=0.0, value=float(datos_sel['precio_venta'] or 0.0), step=100.0)
+                    with col_edm3:
+                        ed_sena = st.number_input(f"Seña / Abonado ({moneda})", min_value=0.0, value=float(datos_sel['sena'] or 0.0), step=100.0)
+                    
+                    guardar_mod = st.form_submit_button("💾 Guardar Cambios", use_container_width=True)
+                    if guardar_mod:
+                        if ed_cliente.strip() and ed_trabajo.strip() and ed_precio > 0:
+                            saldo_act = max(0.0, float(ed_precio) - float(ed_sena))
+                            if IS_POSTGRES:
+                                run_execute_raw("UPDATE trabajos SET cliente=:c, telefono=:tel, tipo_trabajo=:t, taller_externo=:te, fecha_carga=:fc, hora_carga=:hc, fecha_entrega=:fe, estado=:e, costo_material=:cm, precio_venta=:pv, sena=:sena, saldo=:sal WHERE id=:id",
+                                                {"c": ed_cliente.strip(), "tel": ed_tel.strip(), "t": ed_trabajo.strip(), "te": ed_taller.strip(), "fc": str(ed_fc), "hc": ed_hc.strip(), "fe": str(ed_fe), "e": ed_estado, "cm": float(ed_costo), "pv": float(ed_precio), "sena": float(ed_sena), "sal": float(saldo_act), "id": id_mod})
+                            else:
+                                run_execute_raw("UPDATE trabajos SET cliente=?, telefono=?, tipo_trabajo=?, taller_externo=?, fecha_carga=?, hora_carga=?, fecha_entrega=?, estado=?, costo_material=?, precio_venta=?, sena=?, saldo=? WHERE id=?",
+                                                (ed_cliente.strip(), ed_tel.strip(), ed_trabajo.strip(), ed_taller.strip(), str(ed_fc), ed_hc.strip(), str(ed_fe), ed_estado, float(ed_costo), float(ed_precio), float(ed_sena), float(saldo_act), id_mod))
+                            st.success("¡Trabajo actualizado!")
+                            st.rerun()
+
+    with col_t_act2:
+        with st.expander("↩️ Devolver a Presupuesto", expanded=False):
+            df_con_origen = df_todos_trabajos[df_todos_trabajos['presupuesto_origen_id'].notna() & (df_todos_trabajos['presupuesto_origen_id'] > 0)]
+            if not df_con_origen.empty:
+                opc_devolver = {
+                    f"#{row['id']} - {row['cliente']} (Presupuesto #{int(row['presupuesto_origen_id'])})": row
+                    for _, row in df_con_origen.iterrows()
+                }
+                sel_dev = st.selectbox("Elegí el trabajo para regresar a Presupuestos:", list(opc_devolver.keys()), key="sel_dev_trab")
+                r_dev = opc_devolver[sel_dev]
+                id_trab_dev = r_dev['id']
+                id_pres_dev = int(r_dev['presupuesto_origen_id'])
+                
+                st.write("")
+                if st.button("↩️ Confirmar y Devolver", type="primary", use_container_width=True, key="btn_confirm_dev"):
+                    if IS_POSTGRES:
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :pid", {"pid": id_pres_dev})
+                        run_execute_raw("DELETE FROM trabajos WHERE id = :tid", {"tid": id_trab_dev})
+                    else:
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = ?", (id_pres_dev,))
+                        run_execute_raw("DELETE FROM trabajos WHERE id = ?", (id_trab_dev,))
+                    st.success(f"Trabajo #{id_trab_dev} devuelto a Presupuesto #{id_pres_dev} como Pendiente.")
+                    st.rerun()
+            else:
+                st.caption("No hay trabajos originados desde presupuestos para devolver.")
+
+    with col_t_act3:
+        with st.expander("🗑️ Borrar Trabajo", expanded=False):
+            if not df_todos_trabajos.empty:
+                opciones_borrar = {
+                    f"#{row['id']} - {row['cliente']} ({moneda}{row['precio_venta']:,.0f})": row['id']
+                    for _, row in df_todos_trabajos.iterrows()
+                }
+                sel_borrar = st.selectbox("Elegí el trabajo a eliminar:", list(opciones_borrar.keys()), key="sel_borrar_directo")
+                id_borrar = opciones_borrar[sel_borrar]
+                
+                st.write("")
+                if st.button(f"❌ Confirmar y Borrar #{id_borrar}", type="primary", use_container_width=True):
+                    if IS_POSTGRES:
+                        run_execute_raw("DELETE FROM trabajos WHERE id=:id", {"id": id_borrar})
+                    else:
+                        run_execute_raw("DELETE FROM trabajos WHERE id=?", (id_borrar,))
+                    st.warning(f"Trabajo #{id_borrar} eliminado.")
+                    st.rerun()
+
+    st.markdown("""
+    <div style='background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 13px;'>
+        <span style='color: #8b949e; font-weight: 700;'>ESTADOS:&nbsp;&nbsp;</span>
+        <span class='badge-estado badge-pen'>🔴 Pendiente</span>&nbsp;
+        <span class='badge-estado badge-imp'>🟣 En Imprenta</span>&nbsp;
+        <span class='badge-estado badge-arm'>🟡 Para Armar</span>&nbsp;
+        <span class='badge-estado badge-ret'>🟢 Listo Retiro</span>&nbsp;
+        <span class='badge-estado badge-cob'>🔵 Cobrado</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not df_todos_trabajos.empty:
+        with st.expander("🧾 Emitir Boleta de Pago desde un Trabajo", expanded=False):
+            opciones_emitir_bol = {
+                f"#{row['id']} - {row['cliente']} ({row['tipo_trabajo']} - {moneda}{float(row['precio_venta'] or 0):,.0f})": row
+                for _, row in df_todos_trabajos.iterrows()
+            }
+            sel_trab_bol = st.selectbox("Seleccionar Trabajo a Facturar:", list(opciones_emitir_bol.keys()), key="sel_t_bol_directo")
+            t_data_sel = opciones_emitir_bol[sel_trab_bol]
+            
+            if "df_items_boleta_trabajo" not in st.session_state:
+                st.session_state.df_items_boleta_trabajo = pd.DataFrame([
+                    {"Detalle": str(t_data_sel.get('tipo_trabajo') or 'Trabajo Gráfico'), "Cantidad": 1.0, "Precio Unitario": float(t_data_sel.get('precio_venta') or 0.0)}
+                ])
+
+            col_eb1, col_eb2 = st.columns(2)
+            with col_eb1:
+                eb_cli = st.text_input("Cliente", value=str(t_data_sel['cliente']), key="eb_cli_val")
+                eb_tel = st.text_input("Teléfono", value=str(t_data_sel.get('telefono') or ''), key="eb_tel_val")
+            with col_eb2:
+                eb_fec = st.date_input("Fecha de Boleta", value=date.today(), key="eb_fec_val")
+                eb_met = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"], key="eb_met_val")
+            
+            st.markdown("**Ítems / Conceptos a Facturar:**")
+            st.caption("Podés agregar múltiples renglones con `+`. El sistema calcula el total automáticamente.")
+            
+            edited_bol_trab = st.data_editor(
+                st.session_state.df_items_boleta_trabajo,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Detalle": st.column_config.TextColumn("Detalle / Concepto *", required=True),
+                    "Cantidad": st.column_config.NumberColumn("Cantidad / Unidades", min_value=0.01, default=1.0, step=1.0),
+                    "Precio Unitario": st.column_config.NumberColumn(f"Precio Unitario ({moneda})", min_value=0.0, default=0.0, step=100.0)
+                },
+                key="editor_items_boleta_desde_trabajo"
+            )
+            
+            df_bol_trab_calc = edited_bol_trab.dropna(subset=["Detalle"]).copy() if not edited_bol_trab.empty else pd.DataFrame()
+            if not df_bol_trab_calc.empty:
+                df_bol_trab_calc["Cantidad"] = pd.to_numeric(df_bol_trab_calc["Cantidad"], errors="coerce").fillna(1.0)
+                df_bol_trab_calc["Precio Unitario"] = pd.to_numeric(df_bol_trab_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+                df_bol_trab_calc["Subtotal"] = df_bol_trab_calc["Cantidad"] * df_bol_trab_calc["Precio Unitario"]
+                total_calculado_bol_trab = float(df_bol_trab_calc["Subtotal"].sum())
+            else:
+                total_calculado_bol_trab = 0.0
+                
+            col_eb_m1, col_eb_m2, col_eb_m3 = st.columns(3)
+            with col_eb_m1:
+                st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#60a5fa;'>Total Calculado:<br/><span style='font-size:18px;'>{moneda}{total_calculado_bol_trab:,.2f}</span></div>", unsafe_allow_html=True)
+            with col_eb_m2:
+                eb_sen = st.number_input(f"Abonado / Seña ({moneda}) *", min_value=0.0, value=float(t_data_sel.get('sena') or 0.0), step=100.0, key="eb_sen_val")
+            with col_eb_m3:
+                saldo_preview_bt = max(0.0, total_calculado_bol_trab - eb_sen)
+                color_s_bt = "#ef4444" if saldo_preview_bt > 0 else "#10b981"
+                st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:{color_s_bt};'>Saldo Pendiente:<br/><span style='font-size:18px;'>{moneda}{saldo_preview_bt:,.2f}</span></div>", unsafe_allow_html=True)
+                
+            st.write("")
+            btn_generar_bol_ok = st.button("💾 Guardar y Emitir Boleta", type="primary", use_container_width=True)
+            if btn_generar_bol_ok:
+                if eb_cli.strip() and total_calculado_bol_trab > 0:
+                    lista_items_bt = []
+                    for _, r_it in df_bol_trab_calc.iterrows():
+                        lista_items_bt.append({
+                            "detalle": str(r_it["Detalle"]).strip(),
+                            "cantidad": float(r_it["Cantidad"]),
+                            "precio_unitario": float(r_it["Precio Unitario"])
+                        })
+                    detalle_json_bt = json.dumps(lista_items_bt)
+                    saldo_fin_bt = max(0.0, total_calculado_bol_trab - eb_sen)
+                    
+                    if IS_POSTGRES:
+                        run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
+                                        {"f": str(eb_fec), "c": eb_cli.strip(), "t": eb_tel.strip(), "d": detalle_json_bt, "m": eb_met, "tot": total_calculado_bol_trab, "s": eb_sen, "sal": saldo_fin_bt})
+                    else:
+                        run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (str(eb_fec), eb_cli.strip(), eb_tel.strip(), detalle_json_bt, eb_met, total_calculado_bol_trab, eb_sen, saldo_fin_bt))
+                    st.success("¡Boleta emitida con éxito! Ya podés verla en la sección de Boletas.")
+                    st.rerun()
+                else:
+                    st.error("Completá el nombre del cliente y asegurate de ingresar al menos un ítem con precio.")
+
+    if not df_todos_trabajos.empty:
+        df_trabajos_tabla = df_todos_trabajos.copy()
+        
+        df_trabajos_tabla['hora_limpia'] = df_trabajos_tabla['hora_carga'].fillna('')
+        df_trabajos_tabla['fecha_carga_mostrar'] = df_trabajos_tabla.apply(
+            lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
+        )
+        
+        df_trabajos_tabla['sena'] = df_trabajos_tabla['sena'].fillna(0.0)
+        df_trabajos_tabla['saldo'] = (df_trabajos_tabla['precio_venta'].fillna(0.0) - df_trabajos_tabla['sena']).apply(lambda x: max(0.0, x))
+        df_trabajos_tabla['ganancia_calc'] = df_trabajos_tabla['precio_venta'].fillna(0.0) - df_trabajos_tabla['costo_material'].fillna(0.0)
+        
+        col_filtro1, col_filtro2, col_filtro3 = st.columns([1.5, 1.5, 2])
+        with col_filtro1:
+            opciones_filtro = ["Todos"] + ESTADOS_TRABAJO
+            estado_seleccionado = st.selectbox("Filtrar por Estado:", options=opciones_filtro, index=0)
+        with col_filtro2:
+            opciones_orden = [
+                "Fecha Entrega (Próximos primero)",
+                "Fecha Carga (Más recientes)",
+                "Fecha Carga (Más antiguos)",
+                "Cliente (A - Z)",
+                "Cliente (Z - A)",
+                "Mayor Precio de Venta",
+                "Mayor Ganancia Estimada",
+                "Mayor Saldo Pendiente"
+            ]
+            criterio_orden = st.selectbox("⇅ Ordenar por:", options=opciones_orden, index=0)
+        with col_filtro3:
+            busq_trabajo = st.text_input("🔍 Buscar:", key="busq_gral", placeholder="Cliente, trabajo o taller...")
+
+        if estado_seleccionado != "Todos":
+            df_trabajos_tabla = df_trabajos_tabla[df_trabajos_tabla['estado'] == estado_seleccionado]
+            
+        if busq_trabajo:
+            df_trabajos_tabla = df_trabajos_tabla[
+                df_trabajos_tabla['cliente'].str.contains(busq_trabajo, case=False, na=False) |
+                df_trabajos_tabla['tipo_trabajo'].str.contains(busq_trabajo, case=False, na=False) |
+                df_trabajos_tabla['taller_externo'].fillna('').str.contains(busq_trabajo, case=False, na=False)
+            ]
+
+        if criterio_orden == "Fecha Entrega (Próximos primero)":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="fecha_entrega", ascending=True)
+        elif criterio_orden == "Fecha Carga (Más recientes)":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by=["fecha_carga", "hora_limpia", "id"], ascending=[False, False, False])
+        elif criterio_orden == "Fecha Carga (Más antiguos)":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by=["fecha_carga", "hora_limpia", "id"], ascending=[True, True, True])
+        elif criterio_orden == "Cliente (A - Z)":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="cliente", ascending=True)
+        elif criterio_orden == "Cliente (Z - A)":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="cliente", ascending=False)
+        elif criterio_orden == "Mayor Precio de Venta":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="precio_venta", ascending=False)
+        elif criterio_orden == "Mayor Ganancia Estimada":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="ganancia_calc", ascending=False)
+        elif criterio_orden == "Mayor Saldo Pendiente":
+            df_trabajos_tabla = df_trabajos_tabla.sort_values(by="saldo", ascending=False)
+
+        df_trabajos_tabla['estado'] = df_trabajos_tabla['estado'].map(ESTADO_BADGES).fillna(df_trabajos_tabla['estado'])
+        
+        df_mostrar = df_trabajos_tabla.rename(columns={
+            'cliente': 'Cliente',
+            'telefono': 'Teléfono',
+            'tipo_trabajo': 'Trabajo',
+            'taller_externo': 'Imprenta / Taller',
+            'fecha_carga_mostrar': 'Fecha y Hora Carga',
+            'fecha_entrega': 'Fecha Entrega',
+            'estado': 'Estado',
+            'costo_material': f'Costo ({moneda})',
+            'precio_venta': f'Venta ({moneda})',
+            'sena': f'Seña ({moneda})',
+            'saldo': f'Saldo ({moneda})',
+            'ganancia_calc': f'Ganancia ({moneda})'
+        })[['Cliente', 'Teléfono', 'Trabajo', 'Imprenta / Taller', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Costo ({moneda})', f'Venta ({moneda})', f'Seña ({moneda})', f'Saldo ({moneda})', f'Ganancia ({moneda})']]
+        
+        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+    else:
+        st.info("Todavía no hay trabajos cargados en el sistema.")
+
+# ==========================================
+# VISTA 2: PRESUPUESTOS (CON GANANCIA ESTIMADA)
+# ==========================================
+elif st.session_state.seccion_activa == "Presupuestos":
+    st.markdown("### 📄 Emisión de Presupuestos con Múltiples Renglones")
+    
+    with st.expander("➕ Crear Nuevo Presupuesto", expanded=False):
+        col_pr1, col_pr2, col_pr3 = st.columns(3)
+        with col_pr1:
+            pr_cliente = st.text_input("Nombre del Cliente *", key="pr_cli_input")
+        with col_pr2:
+            pr_telefono = st.text_input("Teléfono / WhatsApp", key="pr_tel_input")
+        with col_pr3:
+            pr_fecha = st.date_input("Fecha del Presupuesto", value=date.today(), key="pr_fec_input")
+            
+        pr_tipo = st.selectbox("Rubro Principal", tipos_actuales, key="pr_tipo_sel")
+        
+        st.markdown("**Ítems / Renglones del Presupuesto:**")
+        st.caption("Completá detalle, cantidad, precio unitario y costo. Agregá más renglones con el botón `+`.")
+        
+        if "df_items_presupuesto" not in st.session_state:
+            st.session_state.df_items_presupuesto = pd.DataFrame([
+                {"Detalle": "Cartel Frontlight 2x1m", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0},
+                {"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0}
+            ])
+            
+        edited_pres = st.data_editor(
+            st.session_state.df_items_presupuesto,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Detalle": st.column_config.TextColumn("Detalle / Especificaciones *", required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.01, default=1.0, step=1.0),
+                "Precio Unitario": st.column_config.NumberColumn(f"P. Unitario Venta ({moneda})", min_value=0.0, default=0.0, step=100.0),
+                "Costo Material": st.column_config.NumberColumn(f"Costo Material Unit. ({moneda})", min_value=0.0, default=0.0, step=100.0)
+            },
+            key="editor_items_presupuesto"
+        )
+        
+        df_pr_calc = edited_pres.dropna(subset=["Detalle"]).copy() if not edited_pres.empty else pd.DataFrame()
+        if not df_pr_calc.empty:
+            df_pr_calc = df_pr_calc[df_pr_calc["Detalle"].str.strip() != ""]
+            df_pr_calc["Cantidad"] = pd.to_numeric(df_pr_calc["Cantidad"], errors="coerce").fillna(1.0)
+            df_pr_calc["Precio Unitario"] = pd.to_numeric(df_pr_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+            df_pr_calc["Costo Material"] = pd.to_numeric(df_pr_calc["Costo Material"], errors="coerce").fillna(0.0)
+            
+            df_pr_calc["Total_Venta"] = df_pr_calc["Cantidad"] * df_pr_calc["Precio Unitario"]
+            df_pr_calc["Total_Costo"] = df_pr_calc["Cantidad"] * df_pr_calc["Costo Material"]
+            
+            total_venta_pres = float(df_pr_calc["Total_Venta"].sum())
+            total_costo_pres = float(df_pr_calc["Total_Costo"].sum())
+            ganancia_estimada_pres = total_venta_pres - total_costo_pres
+        else:
+            total_venta_pres = 0.0
+            total_costo_pres = 0.0
+            ganancia_estimada_pres = 0.0
+            
+        col_tot_pr1, col_tot_pr2, col_tot_pr3 = st.columns(3)
+        with col_tot_pr1:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#f59e0b;'>Costo Materiales:<br/><span style='font-size:18px;'>{moneda}{total_costo_pres:,.2f}</span></div>", unsafe_allow_html=True)
+        with col_tot_pr2:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#60a5fa;'>Total Venta:<br/><span style='font-size:18px;'>{moneda}{total_venta_pres:,.2f}</span></div>", unsafe_allow_html=True)
+        with col_tot_pr3:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#10b981;'>Ganancia Estimada:<br/><span style='font-size:18px;'>{moneda}{ganancia_estimada_pres:,.2f}</span></div>", unsafe_allow_html=True)
+            
+        st.write("")
+        if st.button("💾 Guardar Presupuesto Completo", type="primary", use_container_width=True):
+            if not pr_cliente.strip():
+                st.error("Por favor completá el nombre del Cliente.")
+            elif df_pr_calc.empty or total_venta_pres <= 0:
+                st.error("Ingresá al menos un ítem con precio mayor a 0.")
+            else:
+                lista_items_json = []
+                for _, r_it in df_pr_calc.iterrows():
+                    lista_items_json.append({
+                        "detalle": str(r_it["Detalle"]).strip(),
+                        "cantidad": float(r_it["Cantidad"]),
+                        "precio_unitario": float(r_it["Precio Unitario"]),
+                        "costo_material": float(r_it["Costo Material"])
+                    })
+                detalle_guardado = json.dumps(lista_items_json)
+                cant_total_items = float(df_pr_calc["Cantidad"].sum())
+                
+                if IS_POSTGRES:
+                    run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (:f, :c, :tel, :tt, :d, :cant, :pu, :pt, :cm, :e)",
+                                    {"f": str(pr_fecha), "c": pr_cliente.strip(), "tel": pr_telefono.strip(), "tt": pr_tipo, "d": detalle_guardado, "cant": cant_total_items, "pu": total_venta_pres, "pt": total_venta_pres, "cm": total_costo_pres, "e": "Pendiente"})
+                else:
+                    run_execute_raw("INSERT INTO presupuestos (fecha, cliente, telefono, tipo_trabajo, detalle, cantidad, precio_unitario, precio_total, costo_material, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (str(pr_fecha), pr_cliente.strip(), pr_telefono.strip(), pr_tipo, detalle_guardado, cant_total_items, total_venta_pres, total_venta_pres, total_costo_pres, "Pendiente"))
+                st.success("¡Presupuesto guardado con éxito!")
+                st.session_state.df_items_presupuesto = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0, "Costo Material": 0.0}])
+                st.rerun()
+
+    df_presupuestos_aprobados = fetch_data_cached("SELECT * FROM presupuestos WHERE estado = 'Aprobado' ORDER BY id DESC")
+    if not df_presupuestos_aprobados.empty:
+        with st.expander("↩️ Deshacer pase a taller (Revertir por error)", expanded=False):
+            st.caption("Si pasaste un presupuesto a taller por error, podés devolverlo aquí. Se cancelará el trabajo creado en taller y volverá a estar pendiente.")
+            opciones_rev = {
+                f"Presupuesto #{int(row['id'])} - {row['cliente']} ({moneda}{float(row['precio_total'] or 0):,.0f})": int(row['id'])
+                for _, row in df_presupuestos_aprobados.iterrows()
+            }
+            sel_rev_id = st.selectbox("Elegí el presupuesto a recuperar:", list(opciones_rev.keys()), key="sel_rev_pres")
+            pres_id_rev = opciones_rev[sel_rev_id]
+            
+            if st.button("↩️ Devolver a Presupuesto Pendiente", type="primary", use_container_width=True, key="btn_rev_pres_confirm"):
+                if IS_POSTGRES:
+                    run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = :id", {"id": pres_id_rev})
+                    run_execute_raw("DELETE FROM trabajos WHERE presupuesto_origen_id = :id", {"id": pres_id_rev})
+                else:
+                    run_execute_raw("UPDATE presupuestos SET estado = 'Pendiente' WHERE id = ?", (pres_id_rev,))
+                    run_execute_raw("DELETE FROM trabajos WHERE presupuesto_origen_id = ?", (pres_id_rev,))
+                st.success(f"¡Presupuesto #{pres_id_rev} devuelto a la lista de pendientes!")
+                st.rerun()
+
+    df_presupuestos = fetch_data_cached("SELECT * FROM presupuestos WHERE estado = 'Pendiente' ORDER BY id DESC")
+    
+    if not df_presupuestos.empty:
+        opciones_pres = {
+            f"Presupuesto #{int(row['id'])} - {row['cliente']} (Total: {moneda}{float(row['precio_total'] or 0):,.0f} | Ganancia: {moneda}{(float(row['precio_total'] or 0) - float(row['costo_material'] or 0)):,.0f})": int(row['id'])
+            for _, row in df_presupuestos.iterrows()
+        }
+        
+        with st.expander("⚡ Gestionar Presupuesto Seleccionado", expanded=True):
+            pres_sel = st.selectbox("Seleccionar Presupuesto:", list(opciones_pres.keys()), key="pres_sel_box")
+            pres_id = opciones_pres[pres_sel]
+            pres_data = df_presupuestos[df_presupuestos['id'] == pres_id].iloc[0]
+            
+            pv_pres_sel = float(pres_data.get('precio_total') or 0.0)
+            cm_pres_sel = float(pres_data.get('costo_material') or 0.0)
+            gan_pres_sel = pv_pres_sel - cm_pres_sel
+            
+            col_k_p1, col_k_p2, col_k_p3 = st.columns(3)
+            col_k_p1.metric("Costo de Materiales", f"{moneda}{cm_pres_sel:,.2f}")
+            col_k_p2.metric("Total Cotizado", f"{moneda}{pv_pres_sel:,.2f}")
+            col_k_p3.metric("Ganancia Neta Estimada", f"{moneda}{gan_pres_sel:,.2f}", delta=f"{moneda}{gan_pres_sel:,.2f}")
+            
+            st.write("")
+            col_b_p1, col_b_p2 = st.columns(2)
+            with col_b_p1:
+                if st.button("🚀 Pasar a Trabajo Activo (Taller)", use_container_width=True, key=f"btn_p_taller_{pres_id}"):
+                    hora_actual_str = datetime.now().strftime("%H:%M")
+                    
+                    items_parsed = parse_items_json(pres_data.get('detalle'))
+                    resumen_trabajo = ", ".join([f"{it['cantidad']:g}x {it['detalle']}" for it in items_parsed])
+                    if not resumen_trabajo.strip():
+                        resumen_trabajo = str(pres_data.get('tipo_trabajo') or 'Trabajo Gráfico')
+                        
+                    cli_nombre = str(pres_data['cliente'])
+                    cli_tel = str(pres_data.get('telefono') or '')
+                    
+                    if IS_POSTGRES:
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo, presupuesto_origen_id) VALUES (:c, :tel, :t, :te, :fc, :hc, :fe, :e, :cm, :pv, :sena, :sal, :pid)",
+                                        {"c": cli_nombre, "tel": cli_tel, "t": resumen_trabajo, "te": "", "fc": str(date.today()), "hc": hora_actual_str, "fe": str(date.today()), "e": "Pendiente", "cm": cm_pres_sel, "pv": pv_pres_sel, "sena": 0.0, "sal": pv_pres_sel, "pid": int(pres_id)})
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = :id", {"id": pres_id})
+                    else:
+                        run_execute_raw("INSERT INTO trabajos (cliente, telefono, tipo_trabajo, taller_externo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo, presupuesto_origen_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (cli_nombre, cli_tel, resumen_trabajo, "", str(date.today()), hora_actual_str, str(date.today()), "Pendiente", cm_pres_sel, pv_pres_sel, 0.0, pv_pres_sel, int(pres_id)))
+                        run_execute_raw("UPDATE presupuestos SET estado = 'Aprobado' WHERE id = ?", (pres_id,))
+                    st.success(f"¡Presupuesto #{pres_id} pasado a Trabajo de Taller y archivado!")
+                    st.rerun()
+            
+            with col_b_p2:
+                if st.button("🗑️ Borrar Presupuesto", use_container_width=True, key=f"btn_del_pres_{pres_id}"):
+                    if IS_POSTGRES:
+                        run_execute_raw("DELETE FROM presupuestos WHERE id = :id", {"id": pres_id})
+                    else:
+                        run_execute_raw("DELETE FROM presupuestos WHERE id = ?", (pres_id,))
+                    st.warning(f"Presupuesto #{pres_id} eliminado.")
+                    st.rerun()
+
+        st.divider()
+        
+        pr_det_raw = str(pres_data.get('detalle') or '')
+        pr_tel = str(pres_data.get('telefono') or 'No especificado')
+        pr_cant_val = float(pres_data.get('cantidad') or 1.0)
+        pr_unit_val = float(pres_data.get('precio_unitario') or 0.0)
+        pr_tot_val = float(pres_data.get('precio_total') or 0.0)
+        
+        items_lista_render = parse_items_json(pr_det_raw, pr_cant_val, pr_unit_val)
+        
+        pdf_pres_bytes = generar_pdf_presupuesto(
+            titulo_actual, int(pres_id), str(pres_data['fecha']),
+            str(pres_data['cliente']), pr_tel, str(pres_data['tipo_trabajo']),
+            pr_det_raw, pr_cant_val, pr_unit_val, pr_tot_val, pie_empresa
+        )
+        
+        st.markdown("### 👁️ Vista Previa del Presupuesto")
+        info_emp_sub = f"{dir_empresa} | {tel_empresa}" if (dir_empresa and tel_empresa) else (dir_empresa or tel_empresa or "")
+        
+        filas_html_tabla = ""
+        for it in items_lista_render:
+            it_name = str(it.get("detalle", ""))
+            it_cant = float(it.get("cantidad", 1.0))
+            it_pu = float(it.get("precio_unitario", 0.0))
+            it_subtot = it_cant * it_pu
+            filas_html_tabla += (
+                '<tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">'
+                f'<td style="padding: 12px 10px; color: #334155;">{it_name}</td>'
+                f'<td style="padding: 12px 10px; text-align: center; color: #334155;">{it_cant:,.0f}</td>'
+                f'<td style="padding: 12px 10px; text-align: right; color: #334155;">{moneda}{it_pu:,.2f}</td>'
+                f'<td style="padding: 12px 10px; text-align: right; font-weight: bold; color: #1e3a8a;">{moneda}{it_subtot:,.2f}</td>'
+                '</tr>'
+            )
+
+        presupuesto_preview_html = (
+            '<div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">'
+            '<div style="display: flex; justify-content: space-between; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 16px;">'
+            '<div>'
+            f'<h2 style="margin: 0; color: #1e3a8a; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #475569;">{info_emp_sub}</p>'
+            '<span style="font-size: 12px; font-weight: bold; color: #2563eb; background-color: #eff6ff; padding: 3px 8px; border-radius: 4px;">PRESUPUESTO ESTIMADO</span>'
+            '</div>'
+            '<div style="text-align: right;">'
+            f'<h3 style="margin: 0; color: #1e293b; font-size: 17px; font-weight: 800;">N° #{int(pres_id):04d}</h3>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #64748b;">Fecha: {pres_data["fecha"]}</p>'
+            '</div>'
+            '</div>'
+            '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">'
+            f'<p style="margin: 3px 0;"><strong>Cliente:</strong> {pres_data["cliente"]}</p>'
+            f'<p style="margin: 3px 0;"><strong>Teléfono:</strong> {pr_tel}</p>'
+            f'<p style="margin: 3px 0;"><strong>Rubro / Categoría:</strong> {pres_data["tipo_trabajo"]}</p>'
+            '</div>'
+            '<table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">'
+            '<thead>'
+            '<tr style="background-color: #1e3a8a; color: #ffffff;">'
+            '<th style="padding: 10px; text-align: left; border-top-left-radius: 6px;">Detalle del Trabajo</th>'
+            '<th style="padding: 10px; text-align: center; width: 60px;">Cant.</th>'
+            '<th style="padding: 10px; text-align: right; width: 110px;">P. Unitario</th>'
+            '<th style="padding: 10px; text-align: right; width: 110px; border-top-right-radius: 6px;">Total</th>'
+            '</tr>'
+            '</thead>'
+            '<tbody>'
+            f'{filas_html_tabla}'
+            '</tbody>'
+            '</table>'
+            '<div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">'
+            '<div style="background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; min-width: 220px; text-align: right;">'
+            '<span style="font-size: 13px; color: #64748b;">TOTAL PRESUPUESTO:</span><br/>'
+            f'<strong style="font-size: 18px; color: #1e3a8a;">{moneda}{pr_tot_val:,.2f}</strong>'
+            '</div>'
+            '</div>'
+            '<div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 12px; color: #64748b; font-size: 11.5px;">'
+            f'<p style="margin: 2px;">{pie_empresa}</p>'
+            '<p style="margin: 2px;">¡Muchas gracias por su consulta!</p>'
+            '</div>'
+            '</div>'
+        )
+
+        st.html(presupuesto_preview_html)
+            
+        st.write("")
+        col_btn_p_down, col_btn_p_imp = st.columns(2)
+        with col_btn_p_down:
+            st.download_button(
+                label="📥 Descargar PDF",
+                data=pdf_pres_bytes,
+                file_name=f"Presupuesto_{int(pres_id)}_{pres_data['cliente']}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+            
+        with col_btn_p_imp:
+            html_impresion_pres = f"""<script>
+function imprimirPresupuesto() {{
+    var ventana = window.open('', '', 'height=700,width=900');
+    ventana.document.write('<html><head><title>Presupuesto #{pres_id}</title></head><body style="margin: 20px;">');
+    ventana.document.write(`{presupuesto_preview_html}`);
+    ventana.document.write('</body></html>');
+    ventana.document.close();
+    ventana.focus();
+    setTimeout(function() {{
+        ventana.print();
+        ventana.close();
+    }}, 400);
+}}
+</script>
+<button onclick="imprimirPresupuesto()" style="width: 100%; background-color: #1e3a8a; color: white; border: none; padding: 8px 14px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+    🖨️ Imprimir
+</button>"""
+            st.components.v1.html(html_impresion_pres, height=50)
+    else:
+        st.info("No hay presupuestos pendientes. ¡Todos los presupuestos fueron pasados al taller o eliminados!")
+
+# ==========================================
+# VISTA 3: BOLETAS Y COMPROBANTES (CON MÚLTIPLES RENGLONES)
+# ==========================================
+elif st.session_state.seccion_activa == "Boletas":
+    st.markdown("### 🧾 Emisión de Boletas con Múltiples Renglones")
+    
+    with st.expander("➕ Generar Nueva Boleta de Pago", expanded=False):
+        col_b1, col_b2, col_b3 = st.columns(3)
+        with col_b1:
+            b_cliente = st.text_input("Nombre del Cliente *", key="b_cli_input")
+        with col_b2:
+            b_telefono = st.text_input("Teléfono / WhatsApp", key="b_tel_input")
+        with col_b3:
+            b_fecha = st.date_input("Fecha de Boleta", value=date.today(), key="b_fec_input")
+            
+        b_metodo = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"])
+        
+        st.markdown("**Ítems / Conceptos a Facturar:**")
+        st.caption("Agregá renglones con `+`. El sistema calcula el total de la boleta automáticamente.")
+        
+        if "df_items_boleta" not in st.session_state:
+            st.session_state.df_items_boleta = pd.DataFrame([
+                {"Detalle": "Trabajo Gráfico", "Cantidad": 1.0, "Precio Unitario": 0.0},
+                {"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}
+            ])
+            
+        edited_bol = st.data_editor(
+            st.session_state.df_items_boleta,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Detalle": st.column_config.TextColumn("Detalle / Concepto *", required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad / Unidades", min_value=0.01, default=1.0, step=1.0),
+                "Precio Unitario": st.column_config.NumberColumn(f"Precio Unitario ({moneda})", min_value=0.0, default=0.0, step=100.0)
+            },
+            key="editor_items_boleta"
+        )
+        
+        df_bol_calc = edited_bol.dropna(subset=["Detalle"]).copy() if not edited_bol.empty else pd.DataFrame()
+        if not df_bol_calc.empty:
+            df_bol_calc = df_bol_calc[df_bol_calc["Detalle"].str.strip() != ""]
+            df_bol_calc["Cantidad"] = pd.to_numeric(df_bol_calc["Cantidad"], errors="coerce").fillna(1.0)
+            df_bol_calc["Precio Unitario"] = pd.to_numeric(df_bol_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+            df_bol_calc["Subtotal"] = df_bol_calc["Cantidad"] * df_bol_calc["Precio Unitario"]
+            total_calculado_boleta = float(df_bol_calc["Subtotal"].sum())
+        else:
+            total_calculado_boleta = 0.0
+            
+        col_bol_monto, col_bol_sena, col_bol_saldo = st.columns(3)
+        with col_bol_monto:
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#60a5fa;'>Total Calculado:<br/><span style='font-size:18px;'>{moneda}{total_calculado_boleta:,.2f}</span></div>", unsafe_allow_html=True)
+        with col_bol_sena:
+            b_sena_input = st.number_input(f"Monto Abonado / Seña ({moneda}) *", min_value=0.0, step=100.0, key="b_sena_in")
+        with col_bol_saldo:
+            saldo_preview_bol = max(0.0, total_calculado_boleta - float(b_sena_input))
+            color_saldo_box = "#ef4444" if saldo_preview_bol > 0 else "#10b981"
+            st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:{color_saldo_box};'>Saldo Pendiente:<br/><span style='font-size:18px;'>{moneda}{saldo_preview_bol:,.2f}</span></div>", unsafe_allow_html=True)
+            
+        st.write("")
+        btn_crear_bol = st.button("💾 Emitir Boleta Completa", type="primary", use_container_width=True)
+        if btn_crear_bol:
+            if not b_cliente.strip():
+                st.error("Por favor completá el nombre del Cliente.")
+            elif df_bol_calc.empty or total_calculado_boleta <= 0:
+                st.error("Ingresá al menos un ítem con precio mayor a 0.")
+            else:
+                lista_items_bol = []
+                for _, r_it in df_bol_calc.iterrows():
+                    lista_items_bol.append({
+                        "detalle": str(r_it["Detalle"]).strip(),
+                        "cantidad": float(r_it["Cantidad"]),
+                        "precio_unitario": float(r_it["Precio Unitario"])
+                    })
+                detalle_boleta_json = json.dumps(lista_items_bol)
+                saldo_guardar = max(0.0, total_calculado_boleta - float(b_sena_input))
+                
+                if IS_POSTGRES:
+                    run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
+                                    {"f": str(b_fecha), "c": b_cliente.strip(), "t": b_telefono.strip(), "d": detalle_boleta_json, "m": b_metodo, "tot": total_calculado_boleta, "s": float(b_sena_input), "sal": float(saldo_guardar)})
+                else:
+                    run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                    (str(b_fecha), b_cliente.strip(), b_telefono.strip(), detalle_boleta_json, b_metodo, float(total_calculado_boleta), float(b_sena_input), float(saldo_guardar)))
+                st.success("¡Boleta emitida con éxito!")
+                st.session_state.df_items_boleta = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}])
+                st.rerun()
+
+    df_boletas = fetch_data_cached("SELECT * FROM boletas ORDER BY id DESC")
+    
+    if not df_boletas.empty:
+        opciones_bol = {
+            f"Boleta #{int(row['id'])} - {row['cliente']} (Total: {moneda}{float(row['total'] or 0):,.0f} | Saldo: {moneda}{float(row['saldo'] or 0):,.0f})": int(row['id'])
+            for _, row in df_boletas.iterrows()
+        }
+        
+        with st.expander("⚡ Gestionar Boleta Seleccionada", expanded=True):
+            bol_sel = st.selectbox("Seleccionar Boleta:", list(opciones_bol.keys()), key="bol_sel_box")
+            bol_id = opciones_bol[bol_sel]
+            bol_data = df_boletas[df_boletas['id'] == bol_id].iloc[0]
+            
+            col_b_act1, col_b_act2 = st.columns(2)
+            with col_b_act1:
+                tel_limpio = "".join([c for c in str(bol_data.get('telefono') or '') if c.isdigit()])
+                msg_wsp = f"¡Hola {bol_data['cliente']}! Te avisamos desde *{titulo_actual}* que tu trabajo ya está listo. El saldo pendiente es de *{moneda}{float(bol_data['saldo'] or 0):,.2f}*.\n\nPodés abonarlo por transferencia a nuestro Alias: *{alias_banco}* o en efectivo al retirar. ¡Muchas gracias!"
+                url_wsp = f"https://wa.me/{tel_limpio}?text={urllib.parse.quote(msg_wsp)}" if tel_limpio else "#"
+                
+                if tel_limpio:
+                    st.markdown(f"<a href='{url_wsp}' target='_blank' style='text-decoration:none;'><div style='background-color:#25d366; color:white; text-align:center; padding:9px; border-radius:8px; font-weight:bold;'>📲 Enviar Aviso por WhatsApp</div></a>", unsafe_allow_html=True)
+                else:
+                    st.button("📲 WhatsApp (Sin teléfono cargado)", disabled=True, use_container_width=True)
+
+            with col_b_act2:
+                if st.button("🗑️ Borrar Boleta", use_container_width=True, key=f"btn_del_bol_{bol_id}"):
+                    if IS_POSTGRES:
+                        run_execute_raw("DELETE FROM boletas WHERE id = :id", {"id": bol_id})
+                    else:
+                        run_execute_raw("DELETE FROM boletas WHERE id = ?", (bol_id,))
+                    st.warning(f"Boleta #{bol_id} eliminada.")
+                    st.rerun()
+
+        st.divider()
+        
+        b_det_raw = str(bol_data['detalle']) if bol_data['detalle'] and str(bol_data['detalle']).strip() else 'Trabajo Gráfico'
+        b_tel = str(bol_data['telefono']) if bol_data['telefono'] and str(bol_data['telefono']).strip() else 'No especificado'
+        b_met = str(bol_data.get('metodo_pago') or 'Efectivo')
+        b_tot_val = float(bol_data['total'] or 0.0)
+        b_sena_val = float(bol_data['sena'] or 0.0)
+        b_saldo_val = float(bol_data['saldo'] or 0.0)
+        
+        items_boleta_render = parse_items_json(b_det_raw, 1.0, b_tot_val)
+        
+        pdf_bol_bytes = generar_pdf_boleta(
+            titulo_actual, int(bol_id), str(bol_data['fecha']),
+            str(bol_data['cliente']), b_tel, b_det_raw, b_tot_val, b_sena_val, b_saldo_val,
+            alias_banco, cbu_banco, titular_banco, b_met
+        )
+        
+        st.markdown("### 👁️ Vista Previa del Comprobante")
+        info_emp_b_sub = f"{dir_empresa} | {tel_empresa}" if (dir_empresa and tel_empresa) else (dir_empresa or tel_empresa or "")
+        
+        filas_boleta_html = ""
+        for it in items_boleta_render:
+            i_nom = str(it.get("detalle", ""))
+            i_cnt = float(it.get("cantidad", 1.0))
+            i_pu = float(it.get("precio_unitario", 0.0))
+            i_sub = i_cnt * i_pu if i_pu > 0 else b_tot_val
+            filas_boleta_html += (
+                '<tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">'
+                f'<td style="padding: 10px; color: #334155;">{i_nom}</td>'
+                f'<td style="padding: 10px; text-align: center; color: #334155;">{i_cnt:,.0f}</td>'
+                f'<td style="padding: 10px; text-align: right; color: #334155;">{moneda}{i_pu:,.2f}</td>'
+                f'<td style="padding: 10px; text-align: right; font-weight: bold; color: #15803d;">{moneda}{i_sub:,.2f}</td>'
+                '</tr>'
+            )
+
+        boleta_preview_html = (
+            '<div style="background-color: #ffffff; color: #111827; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; box-shadow: 0 4px 15px rgba(0,0,0,0.2); max-width: 820px; margin: 0 auto;">'
+            '<div style="display: flex; justify-content: space-between; border-bottom: 2px solid #15803d; padding-bottom: 12px; margin-bottom: 16px;">'
+            '<div>'
+            f'<h2 style="margin: 0; color: #15803d; font-size: 22px; font-weight: 800;">{titulo_actual}</h2>'
+            f'<p style="margin: 3px 0; font-size: 13px; color: #475569;">{info_emp_b_sub}</p>'
+            '<span style="font-size: 12px; font-weight: bold; color: #15803d; background-color: #f0fdf4; padding: 3px 8px; border-radius: 4px;">BOLETA / COMPROBANTE DE PAGO</span>'
+            '</div>'
+            '<div style="text-align: right;">'
+            f'<h3 style="margin: 0; color: #15803d; font-size: 17px; font-weight: 800;">BOLETA N° #{int(bol_id):04d}</h3>'
+            f'<p style="margin: 3px 0; font-size: 12px; color: #666;">Fecha: {bol_data["fecha"]}</p>'
+            '</div>'
+            '</div>'
+            '<div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px;">'
+            f'<p style="margin: 3px 0;"><strong>Cliente:</strong> {bol_data["cliente"]}</p>'
+            f'<p style="margin: 3px 0;"><strong>Teléfono:</strong> {b_tel}</p>'
+            '</div>'
+            '<table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 13.5px;">'
+            '<thead>'
+            '<tr style="background-color: #15803d; color: #ffffff;">'
+            '<th style="padding: 10px; text-align: left; border-top-left-radius: 6px;">Detalle / Concepto</th>'
+            '<th style="padding: 10px; text-align: center; width: 60px;">Cant.</th>'
+            '<th style="padding: 10px; text-align: right; width: 110px;">P. Unitario</th>'
+            '<th style="padding: 10px; text-align: right; width: 110px; border-top-right-radius: 6px;">Total</th>'
+            '</tr>'
+            '</thead>'
+            '<tbody>'
+            f'{filas_boleta_html}'
+            '</tbody>'
+            '</table>'
+            '<div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">'
+            '<div style="width: 270px; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 8px; font-size: 13px;">'
+            '<div style="display: flex; justify-content: space-between; margin-bottom: 4px;">'
+            '<span>Total:</span>'
+            f'<strong>{moneda}{b_tot_val:,.2f}</strong>'
+            '</div>'
+            '<div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #15803d;">'
+            f'<span>Abonado ({b_met}):</span>'
+            f'<strong>{moneda}{b_sena_val:,.2f}</strong>'
+            '</div>'
+            '<hr style="margin: 6px 0; border: none; border-top: 1px solid #cbd5e1;">'
+            '<div style="display: flex; justify-content: space-between; font-size: 14.5px; color: #b91c1c;">'
+            '<strong>Saldo Pendiente:</strong>'
+            f'<strong>{moneda}{b_saldo_val:,.2f}</strong>'
+            '</div>'
+            '</div>'
+            '</div>'
+            '<div style="background-color:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:8px; text-align:center; font-size:12px; color:#1e3a8a; margin-bottom:12px;">'
+            f'<strong>ALIAS DE TRANSFERENCIA:</strong> {alias_banco} &nbsp;|&nbsp; <strong>TITULAR:</strong> {titular_banco}'
+            '</div>'
+            '<div style="text-align: center; border-top: 1px dashed #cbd5e1; padding-top: 10px; color: #64748b; font-size: 11.5px;">'
+            '<p style="margin: 2px;">Comprobante de entrega y registro de pago interno.</p>'
+            '<p style="margin: 2px;">¡Muchas gracias por su compra!</p>'
+            '</div>'
+            '</div>'
+        )
+
+        st.html(boleta_preview_html)
+        st.write("")
+        
+        col_btn_b_down, col_btn_b_imp = st.columns(2)
+        with col_btn_b_down:
+            st.download_button(
+                label="📥 Descargar PDF",
+                data=pdf_bol_bytes,
+                file_name=f"Boleta_{int(bol_id)}_{bol_data['cliente']}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+            
+        with col_btn_b_imp:
+            html_impresion_bol = f"""<script>
+function imprimirBoletaDirecta() {{
+    var ventana = window.open('', '', 'height=700,width=900');
+    ventana.document.write('<html><head><title>Boleta #{bol_id}</title></head><body style="margin: 20px;">');
+    ventana.document.write(`{boleta_preview_html}`);
+    ventana.document.write('</body></html>');
+    ventana.document.close();
+    ventana.focus();
+    setTimeout(function() {{
+        ventana.print();
+        ventana.close();
+    }}, 400);
+}}
+</script>
+<button onclick="imprimirBoletaDirecta()" style="width: 100%; background-color: #15803d; color: white; border: none; padding: 8px 14px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;">
+    🖨️ Imprimir
+</button>"""
+            st.components.v1.html(html_impresion_bol, height=50)
+
+# ==========================================
+# VISTA 4: HISTORIAL POR CLIENTES CON WHATSAPP
+# ==========================================
+elif st.session_state.seccion_activa == "Clientes":
+    df_clientes_trab = fetch_data_cached("SELECT DISTINCT cliente FROM trabajos WHERE cliente IS NOT NULL AND cliente != ''")
+    df_clientes_pres = fetch_data_cached("SELECT DISTINCT cliente FROM presupuestos WHERE cliente IS NOT NULL AND cliente != ''")
+    
+    lista_clientes = sorted(list(set(df_clientes_trab['cliente'].tolist() + df_clientes_pres['cliente'].tolist()))) if (not df_clientes_trab.empty or not df_clientes_pres.empty) else []
+    
+    if lista_clientes:
+        cli_sel = st.selectbox("👤 Seleccionar Cliente para ver Historial y Contactar:", lista_clientes)
+        
+        df_hist_trab = run_query_raw("SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo FROM trabajos WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, cliente, telefono, tipo_trabajo, fecha_carga, hora_carga, fecha_entrega, estado, costo_material, precio_venta, sena, saldo FROM trabajos WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
+        df_hist_bol = run_query_raw("SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = :c ORDER BY id DESC" if IS_POSTGRES else "SELECT id, fecha, detalle, metodo_pago, total, sena, saldo FROM boletas WHERE cliente = ? ORDER BY id DESC", {"c": cli_sel} if IS_POSTGRES else (cli_sel,))
+        
+        tel_encontrado = ""
+        if not df_hist_trab.empty and df_hist_trab['telefono'].dropna().any():
+            for t in df_hist_trab['telefono'].dropna():
+                if str(t).strip():
+                    tel_encontrado = str(t).strip()
+                    break
+        
+        col_c_k1, col_c_k2, col_c_k3 = st.columns(3)
+        total_comprado = df_hist_trab['precio_venta'].sum() if not df_hist_trab.empty else 0.0
+        saldo_pendiente_cli = df_hist_bol['saldo'].sum() if not df_hist_bol.empty else 0.0
+        
+        col_c_k1.metric("Total Facturado Histórico", f"{moneda}{total_comprado:,.2f}")
+        col_c_k2.metric("Trabajos Realizados", len(df_hist_trab))
+        col_c_k3.metric("Saldo Deudor Pendiente", f"{moneda}{saldo_pendiente_cli:,.2f}", delta=f"-{moneda}{saldo_pendiente_cli:,.2f}" if saldo_pendiente_cli > 0 else "Al día")
+        
+        st.divider()
+
+        st.markdown("### 📲 Enviar Aviso de Pedido Listo por WhatsApp")
+        if not df_hist_trab.empty:
+            opciones_trabajos_cli = {}
+            for _, row in df_hist_trab.iterrows():
+                p_v = float(row.get('precio_venta') or 0.0)
+                lbl = f"#{row['id']} - {row['tipo_trabajo']} ({moneda}{p_v:,.0f})"
+                opciones_trabajos_cli[lbl] = row
+
+            sel_trab_wsp = st.selectbox("Elegí el pedido a notificar:", list(opciones_trabajos_cli.keys()), key=f"sel_t_wsp_{cli_sel}")
+            trab_info = opciones_trabajos_cli[sel_trab_wsp]
+            
+            tel_actual_trab = str(trab_info.get('telefono') or tel_encontrado)
+            tel_wsp_input = st.text_input("Número de Teléfono / WhatsApp:", value=tel_actual_trab, placeholder="ej: 5491112345678", key=f"input_wsp_{trab_info['id']}")
+            
+            tel_numeros = "".join([c for c in tel_wsp_input if c.isdigit()])
+            nombre_trab = str(trab_info['tipo_trabajo'])
+            monto_tot = f"{float(trab_info['precio_venta'] or 0):,.2f}"
+            
+            try:
+                msg_personalizado = msg_wsp_template.format(
+                    cliente=cli_sel,
+                    trabajo=nombre_trab,
+                    total=monto_tot,
+                    alias=alias_banco
+                )
+            except Exception:
+                msg_personalizado = f"Hola, Tu pedido {nombre_trab} está listo! el total es ${monto_tot} Gracias!"
+                
+            url_wsp_cli = f"https://wa.me/{tel_numeros}?text={urllib.parse.quote(msg_personalizado)}" if tel_numeros else "#"
+            
+            if tel_numeros:
+                st.markdown(f"<a href='{url_wsp_cli}' target='_blank' style='text-decoration:none;'><div style='background-color:#25d366; color:white; text-align:center; padding:10px; border-radius:8px; font-weight:bold; font-size:14.5px;'>📲 Enviar Mensaje a {cli_sel} por WhatsApp</div></a>", unsafe_allow_html=True)
+            else:
+                st.info("Ingresá el número de WhatsApp arriba para habilitar el botón.")
+        else:
+            st.info("Este cliente no tiene trabajos cargados para notificar.")
+
+        st.subheader("📋 Pedidos del Cliente")
+        if not df_hist_trab.empty:
+            df_hist_trab['hora_limpia'] = df_hist_trab['hora_carga'].fillna('')
+            df_hist_trab['fecha_carga_mostrar'] = df_hist_trab.apply(
+                lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
+            )
+            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'telefono': 'Teléfono', 'fecha_carga_mostrar': 'Fecha y Hora Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})', 'sena': f'Seña ({moneda})', 'saldo': f'Saldo ({moneda})'})[['Trabajo', 'Teléfono', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Venta ({moneda})', f'Seña ({moneda})', f'Saldo ({moneda})']], use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay trabajos registrados para este cliente.")
+            
+        st.subheader("🧾 Comprobantes de Pago y Saldos")
+        if not df_hist_bol.empty:
+            st.dataframe(df_hist_bol.rename(columns={'fecha': 'Fecha', 'detalle': 'Detalle', 'metodo_pago': 'Método', 'total': f'Total ({moneda})', 'sena': f'Abonado ({moneda})', 'saldo': f'Saldo ({moneda})'}), use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay boletas emitidas para este cliente.")
+    else:
+        st.info("Todavía no hay clientes con actividad registrada.")
+
+# ==========================================
+# VISTA 5: CATÁLOGO DE INSUMOS Y MÁRGENES
+# ==========================================
+elif st.session_state.seccion_activa == "Insumos":
+    with st.expander("➕ Cargar Nuevo Material / Insumo", expanded=False):
+        with st.form("form_nuevo_insumo", clear_on_submit=True):
+            col_in1, col_in2 = st.columns(2)
+            with col_in1:
+                in_nombre = st.text_input("Nombre del Insumo (ej: Lona Frontlight 13oz, Vinilo Mate) *")
+                in_unidad = st.selectbox("Unidad de Medida", ["m² (Metro Cuadrado)", "Metro Lineal", "Unidad", "Placa", "Rollo"])
+            with col_in2:
+                in_costo = st.number_input(f"Costo Base Unitario ({moneda}) *", min_value=0.0, step=100.0)
+                in_multi = st.number_input("Multiplicador de Ganancia Deseado (ej: 2.5 = 150% ganancia)", min_value=1.0, value=2.5, step=0.1)
+            
+            btn_save_ins = st.form_submit_button("Guardar Insumo", use_container_width=True)
+            if btn_save_ins:
+                if in_nombre.strip() and in_costo > 0:
+                    try:
+                        if IS_POSTGRES:
+                            run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (:n, :u, :c, :m)",
+                                            {"n": in_nombre.strip(), "u": in_unidad, "c": float(in_costo), "m": float(in_multi)})
+                        else:
+                            run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (?, ?, ?, ?)",
+                                            (in_nombre.strip(), in_unidad, float(in_costo), float(in_multi)))
+                        st.success("¡Insumo guardado correctamente!")
+                        st.rerun()
+                    except Exception:
+                        st.error("Ese insumo ya está cargado.")
+
+    df_insumos = fetch_data_cached("SELECT id, nombre, unidad, costo_unitario, multiplicador_sugerido, (costo_unitario * multiplicador_sugerido) as precio_sugerido FROM insumos ORDER BY nombre ASC")
+    
+    if not df_insumos.empty:
+        st.markdown("### 🏷️ Lista de Precios y Costos de Insumos")
+        st.dataframe(df_insumos.rename(columns={
+            'nombre': 'Material / Insumo',
+            'unidad': 'Unidad',
+            'costo_unitario': f'Costo Base ({moneda})',
+            'multiplicador_sugerido': 'Multiplicador',
+            'precio_sugerido': f'Precio Venta Sugerido ({moneda})'
+        })[['Material / Insumo', 'Unidad', f'Costo Base ({moneda})', 'Multiplicador', f'Precio Venta Sugerido ({moneda})']], use_container_width=True, hide_index=True)
+        
+        with st.expander("🗑️ Eliminar Insumo"):
+            opc_in_del = {row['nombre']: row['id'] for _, row in df_insumos.iterrows()}
+            sel_in_del = st.selectbox("Seleccionar insumo a borrar:", list(opc_in_del.keys()))
+            if st.button("Eliminar Insumo"):
+                if IS_POSTGRES: run_execute_raw("DELETE FROM insumos WHERE id=:id", {"id": opc_in_del[sel_in_del]})
+                else: run_execute_raw("DELETE FROM insumos WHERE id=?", (opc_in_del[sel_in_del],))
+                st.rerun()
+    else:
+        st.info("Todavía no cargaste ningún insumo en el catálogo.")
+
+# ==========================================
+# VISTA 6: COMPRAS Y FACTURAS (MÚLTIPLES RENGLONES)
+# ==========================================
+elif st.session_state.seccion_activa == "Compras":
+    st.markdown("### 🛒 Registro de Compras y Facturas con Desglose")
+    
+    with st.expander("➕ Cargar Factura con Múltiples Productos", expanded=False):
+        col_fc1, col_fc2, col_fc3 = st.columns(3)
+        with col_fc1:
+            prov_input = st.text_input("Proveedor * (ej: VL Insumos)", key="c_prov_multi")
+        with col_fc2:
+            fact_input = st.text_input("N° Factura / Remito", key="c_fact_multi")
+        with col_fc3:
+            fecha_input = st.date_input("Fecha de Compra", value=date.today(), key="c_fecha_multi")
+        
+        st.markdown("**Renglones de la Compra / Factura:**")
+        st.caption("Podés agregar renglones haciendo clic en el `+` al final de la tabla.")
+        
+        if "df_items_compra" not in st.session_state:
+            st.session_state.df_items_compra = pd.DataFrame([
+                {"Detalle": "Vinilo Rojo", "Cantidad": 1.0, "Precio Unitario": 0.0},
+                {"Detalle": "Vinilo Verde", "Cantidad": 1.0, "Precio Unitario": 0.0},
+                {"Detalle": "Cinta Térmica", "Cantidad": 1.0, "Precio Unitario": 0.0}
+            ])
+            
+        edited_items = st.data_editor(
+            st.session_state.df_items_compra,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Detalle": st.column_config.TextColumn("Detalle / Producto *", required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.01, default=1.0, step=1.0),
+                "Precio Unitario": st.column_config.NumberColumn(f"Precio Unit. ({moneda})", min_value=0.0, default=0.0, step=100.0)
+            },
+            key="editor_items_compras"
+        )
+        
+        df_calc = edited_items.dropna(subset=["Detalle"]).copy() if not edited_items.empty else pd.DataFrame()
+        if not df_calc.empty:
+            df_calc["Cantidad"] = pd.to_numeric(df_calc["Cantidad"], errors="coerce").fillna(1.0)
+            df_calc["Precio Unitario"] = pd.to_numeric(df_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+            df_calc["Importe"] = df_calc["Cantidad"] * df_calc["Precio Unitario"]
+            total_factura_calc = df_calc["Importe"].sum()
+        else:
+            total_factura_calc = 0.0
+            
+        st.markdown(f"<div style='text-align: right; font-size: 16px; font-weight: bold; color: #60a5fa; margin-bottom: 10px;'>TOTAL CALCULADO DE LA FACTURA: {moneda}{total_factura_calc:,.2f}</div>", unsafe_allow_html=True)
+        
+        if st.button("💾 Guardar Factura Completa", type="primary", use_container_width=True):
+            if not prov_input.strip():
+                st.error("Por favor completá el nombre del Proveedor.")
+            elif df_calc.empty:
+                st.error("Ingresá al menos un producto en la tabla.")
+            else:
+                for _, row_item in df_calc.iterrows():
+                    det_txt = str(row_item["Detalle"]).strip()
+                    cant_val = float(row_item["Cantidad"])
+                    pu_val = float(row_item["Precio Unitario"])
+                    tot_renglon = cant_val * pu_val
+                    if det_txt:
+                        if IS_POSTGRES:
+                            run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (:f, :p, :fe, :pr, :ca, :pu, :c)",
+                                            {"f": fact_input.strip(), "p": prov_input.strip(), "fe": str(fecha_input), "pr": det_txt, "ca": cant_val, "pu": pu_val, "c": tot_renglon})
+                        else:
+                            run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                            (fact_input.strip(), prov_input.strip(), str(fecha_input), det_txt, cant_val, pu_val, tot_renglon))
+                st.success("¡Factura e ítems guardados con éxito!")
+                st.session_state.df_items_compra = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}])
+                st.rerun()
+
+    df_compras_raw = fetch_data_cached("SELECT id, fecha, factura, proveedor, producto, cantidad, precio_unitario, costo FROM compras ORDER BY fecha DESC, id DESC")
+
+    with st.expander("🗑️ Borrar Renglón de Compra", expanded=False):
+        if not df_compras_raw.empty:
+            opciones_c_del = {
+                f"#{row['id']} - {row['proveedor']} | {row['producto']} (Cant: {row['cantidad']} | {moneda}{row['costo']:,.0f})": row['id']
+                for _, row in df_compras_raw.iterrows()
+            }
+            c_del_sel = st.selectbox("Seleccionar ítem a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
+            c_del_id = opciones_c_del[c_del_sel]
+            if st.button(f"❌ Borrar Registro #{c_del_id}", type="primary", use_container_width=True):
+                if IS_POSTGRES: run_execute_raw("DELETE FROM compras WHERE id = :id", {"id": c_del_id})
+                else: run_execute_raw("DELETE FROM compras WHERE id = ?", (c_del_id,))
+                st.warning(f"Registro #{c_del_id} eliminado.")
+                st.rerun()
+
+    st.divider()
+    if not df_compras_raw.empty:
+        df_compras_mostrar = df_compras_raw.copy()
+        busqueda_prov = st.text_input("🔍 Buscar:", key="search_prov", placeholder="Proveedor, producto o factura...")
+        if busqueda_prov:
+            df_compras_mostrar = df_compras_mostrar[
+                df_compras_mostrar['proveedor'].str.contains(busqueda_prov, case=False, na=False) |
+                df_compras_mostrar['producto'].str.contains(busqueda_prov, case=False, na=False) |
+                df_compras_mostrar['factura'].fillna('').str.contains(busqueda_prov, case=False, na=False)
+            ]
+        
+        df_mostrar_compras = df_compras_mostrar.rename(columns={
+            'id': 'ID',
+            'fecha': 'Fecha',
+            'factura': 'N° Factura',
+            'proveedor': 'Proveedor',
+            'producto': 'Detalle / Producto',
+            'cantidad': 'Cant.',
+            'precio_unitario': f'P. Unit. ({moneda})',
+            'costo': f'Importe ({moneda})'
+        })
+        st.dataframe(df_mostrar_compras[['Fecha', 'N° Factura', 'Proveedor', 'Detalle / Producto', 'Cant.', f'P. Unit. ({moneda})', f'Importe ({moneda})']], use_container_width=True, hide_index=True)
+    else:
+        st.info("Todavía no hay compras cargadas.")
+
+# ==========================================
+# VISTA 7: BALANCE Y FINANZAS
+# ==========================================
+elif st.session_state.seccion_activa == "Balance":
+    df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas, SUM(costo_material) as total_costos_prod FROM trabajos")
+    df_gastos_compras = fetch_data_cached("SELECT SUM(costo) as total_compras FROM compras")
+    
+    total_ventas = float(df_ventas_total['total_ventas'].iloc[0] or 0.0)
+    total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
+    total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
+    
+    ganancia_neta_real = total_ventas - total_compras
+    margen_real = (ganancia_neta_real / total_ventas * 100) if total_ventas > 0 else 0.0
+
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric(f"Ingresos Totales (Ventas)", f"{moneda}{total_ventas:,.2f}")
+    kpi2.metric(f"Egresos Reales (Compras)", f"{moneda}{total_compras:,.2f}")
+    kpi3.metric(f"Ganancia Neta Real", f"{moneda}{ganancia_neta_real:,.2f}", delta=f"{moneda}{ganancia_neta_real:,.2f}")
+    kpi4.metric("Margen Neto", f"{margen_real:.1f}%")
+
+    st.divider()
+    
+    st.markdown("### 🔍 Desglose Financiero del Taller")
+    col_egr1, col_egr2, col_egr3 = st.columns(3)
+    col_egr1.metric("🛠️ Costos Teóricos de Producción (Trabajos)", f"{moneda}{total_costos_produccion:,.2f}", help="Suma de los costos estimados asignados a cada trabajo.")
+    col_egr2.metric("🧾 Gastos Reales en Proveedores (Compras)", f"{moneda}{total_compras:,.2f}", help="Facturas reales pagadas a proveedores de insumos.")
+    
+    df_pagos_metodo = fetch_data_cached("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
+    efectivo_en_mano = 0.0
+    banco_mp = 0.0
+    if not df_pagos_metodo.empty:
+        for _, r in df_pagos_metodo.iterrows():
+            met = r['metodo_pago'] or 'Efectivo (Caja Taller)'
+            monto = float(r['total_cobrado'] or 0.0)
+            if "Efectivo" in str(met):
+                efectivo_en_mano += monto
+            else:
+                banco_mp += monto
+                
+    col_egr3.metric("💵 Ingresos en Efectivo (Cobrado)", f"{moneda}{efectivo_en_mano:,.2f}")
+
+    st.divider()
+    
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.markdown("**Comparativa: Ventas vs Compras y Ganancia**")
+        df_comp = pd.DataFrame({
+            "Concepto": ["Ingresos (Ventas)", "Compras Proveedores", "Ganancia Neta Real"],
+            f"Monto ({moneda})": [total_ventas, total_compras, ganancia_neta_real]
+        })
+        fig_bar = px.bar(
+            df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
+            color_discrete_map={"Ingresos (Ventas)": "#3b82f6", "Compras Proveedores": "#ef4444", "Ganancia Neta Real": "#10b981"},
+            template="plotly_dark"
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    with col_g2:
+        st.markdown("**Distribución de Trabajos por Rubro**")
+        df_tipos = fetch_data_cached("SELECT tipo_trabajo AS Tipo, COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
+        if not df_tipos.empty:
+            fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+# ==========================================
+# VISTA 8: AJUSTES Y CONFIGURACIÓN
+# ==========================================
+elif st.session_state.seccion_activa == "Ajustes":
+    col_cfg1, col_cfg2 = st.columns(2)
+    
+    with col_cfg1:
+        st.markdown("### 🏢 Datos de la Empresa y Banco")
+        with st.form("form_configuracion_ampliada"):
+            cfg_titulo = st.text_input("Nombre de la Empresa:", value=titulo_actual)
+            cfg_subtitulo = st.text_input("Subtítulo:", value=subtitulo_actual)
+            cfg_tel = st.text_input("Teléfono / WhatsApp de Contacto:", value=tel_empresa)
+            cfg_dir = st.text_input("Dirección:", value=dir_empresa)
+            cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD):", value=moneda)
+            
+            st.markdown("---")
+            st.markdown("**💳 Datos de Cobro (Aparecen en Boletas)**")
+            cfg_alias = st.text_input("Alias Bancario / MP:", value=alias_banco)
+            cfg_cbu = st.text_input("CBU / CVU:", value=cbu_banco)
+            cfg_titular = st.text_input("Titular de la Cuenta:", value=titular_banco)
+            cfg_pie = st.text_area("Leyenda en Presupuestos:", value=pie_empresa)
+            
+            st.markdown("---")
+            st.markdown("### 📲 Mensaje Predeterminado de WhatsApp")
+            st.caption("Variables disponibles: `{cliente}`, `{trabajo}`, `{total}`, `{alias}`")
+            cfg_msg_wsp = st.text_area("Plantilla de Mensaje:", value=msg_wsp_template, height=85)
+            
+            guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
+            if guardar_cfg:
+                configs_update = {
+                    "titulo_app": cfg_titulo.strip(),
+                    "subtitulo_app": cfg_subtitulo.strip(),
+                    "telefono_empresa": cfg_tel.strip(),
+                    "direccion_empresa": cfg_dir.strip(),
+                    "simbolo_moneda": cfg_moneda.strip() if cfg_moneda.strip() else "$",
+                    "alias_bancario": cfg_alias.strip(),
+                    "cbu_bancario": cfg_cbu.strip(),
+                    "titular_cuenta": cfg_titular.strip(),
+                    "mensaje_pie": cfg_pie.strip(),
+                    "mensaje_wsp_custom": cfg_msg_wsp.strip()
+                }
+                for k, v in configs_update.items():
+                    if IS_POSTGRES:
+                        run_execute_raw("INSERT INTO configuracion (clave, valor) VALUES (:c, :v) ON CONFLICT (clave) DO UPDATE SET valor = :v", {"c": k, "v": v})
+                    else:
+                        run_execute_raw("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v))
+                st.success("¡Configuración actualizada!")
+                st.rerun()
+
+    with col_cfg2:
+        st.markdown("### 🏷️ Tipos de Trabajo Sugeridos")
+        with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
+            nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Cartel Neón LED):")
+            btn_add_tipo = st.form_submit_button("➕ Agregar Rubro", use_container_width=True)
+            if btn_add_tipo:
+                if nuevo_tipo_txt.strip():
+                    try:
+                        if IS_POSTGRES:
+                            run_execute_raw("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()})
+                        else:
+                            run_execute_raw("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),))
+                        st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
+                        st.rerun()
+                    except Exception:
+                        st.warning("Ese rubro ya existe.")
