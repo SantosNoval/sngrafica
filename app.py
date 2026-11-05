@@ -28,7 +28,9 @@ def get_db_engine(url):
     if not url:
         return None
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif url.startswith("postgresql://") and "+psycopg2" not in url:
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     return create_engine(
         url,
         pool_size=10,
