@@ -298,7 +298,6 @@ st.markdown("""
         max-width: 1400px;
     }
 
-    /* CONTROLES E INPUTS EN MODO OSCURO */
     div[data-baseweb="select"] > div,
     div[data-baseweb="input"],
     .stSelectbox div[data-baseweb="select"] > div,
@@ -338,7 +337,6 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
-    /* PÍLDORAS DEL MENÚ SUPERIOR */
     .top-nav div[data-testid="stButton"] > button {
         background-color: #161b26 !important;
         color: #e2e8f0 !important;
@@ -368,7 +366,6 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(239, 68, 68, 0.45) !important;
     }
 
-    /* TABLA NATIVA DE STREAMLIT */
     [data-testid="stDataFrame"] {
         color-scheme: dark !important;
         border-radius: 8px;
@@ -376,7 +373,6 @@ st.markdown("""
         border: 1px solid #1e293b;
     }
 
-    /* BADGES DE ESTADOS */
     .badge-estado {
         display: inline-block;
         padding: 3px 8px;
@@ -392,7 +388,6 @@ st.markdown("""
     .badge-ret { background-color: #052e16 !important; color: #86efac !important; border: 1px solid #14532d !important; }
     .badge-cob { background-color: #082f49 !important; color: #7dd3fc !important; border: 1px solid #075985 !important; }
 
-    /* HERO DINÁMICO */
     .hero-container {
         text-align: center;
         padding: 14px 10px 18px 10px;
@@ -775,7 +770,7 @@ if st.session_state.seccion_activa == "Trabajos":
     </div>
     """, unsafe_allow_html=True)
 
-    # NUEVO: EMITIR BOLETA DESDE UN TRABAJO
+    # EMITIR BOLETA DESDE UN TRABAJO CON MÚLTIPLES RENGLONES (CON st.data_editor)
     if not df_todos_trabajos.empty:
         with st.expander("🧾 Emitir Boleta de Pago desde un Trabajo", expanded=False):
             opciones_emitir_bol = {
@@ -785,37 +780,81 @@ if st.session_state.seccion_activa == "Trabajos":
             sel_trab_bol = st.selectbox("Seleccionar Trabajo a Facturar:", list(opciones_emitir_bol.keys()), key="sel_t_bol_directo")
             t_data_sel = opciones_emitir_bol[sel_trab_bol]
             
-            with st.form("form_emitir_boleta_desde_trabajo"):
-                col_eb1, col_eb2 = st.columns(2)
-                with col_eb1:
-                    eb_cli = st.text_input("Cliente", value=str(t_data_sel['cliente']))
-                    eb_tel = st.text_input("Teléfono", value=str(t_data_sel.get('telefono') or ''))
-                with col_eb2:
-                    eb_fec = st.date_input("Fecha de Boleta", value=date.today())
-                    eb_met = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"])
+            # Inicializar dataframe para el editor de ítems de boleta desde trabajo
+            if "df_items_boleta_trabajo" not in st.session_state:
+                st.session_state.df_items_boleta_trabajo = pd.DataFrame([
+                    {"Detalle": str(t_data_sel.get('tipo_trabajo') or 'Trabajo Gráfico'), "Cantidad": 1.0, "Precio Unitario": float(t_data_sel.get('precio_venta') or 0.0)}
+                ])
+            else:
+                # Si cambia de trabajo seleccionado, precargamos el detalle y precio del trabajo seleccionado
+                pass
+
+            col_eb1, col_eb2 = st.columns(2)
+            with col_eb1:
+                eb_cli = st.text_input("Cliente", value=str(t_data_sel['cliente']), key="eb_cli_val")
+                eb_tel = st.text_input("Teléfono", value=str(t_data_sel.get('telefono') or ''), key="eb_tel_val")
+            with col_eb2:
+                eb_fec = st.date_input("Fecha de Boleta", value=date.today(), key="eb_fec_val")
+                eb_met = st.selectbox("Método de Pago", ["Efectivo (Caja Taller)", "Transferencia / MP (Banco)"], key="eb_met_val")
+            
+            st.markdown("**Ítems / Conceptos a Facturar:**")
+            st.caption("Podés agregar múltiples renglones con `+`. El sistema calcula el total automáticamente.")
+            
+            edited_bol_trab = st.data_editor(
+                st.session_state.df_items_boleta_trabajo,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Detalle": st.column_config.TextColumn("Detalle / Concepto *", required=True),
+                    "Cantidad": st.column_config.NumberColumn("Cantidad / Unidades", min_value=0.01, default=1.0, step=1.0),
+                    "Precio Unitario": st.column_config.NumberColumn(f"Precio Unitario ({moneda})", min_value=0.0, default=0.0, step=100.0)
+                },
+                key="editor_items_boleta_desde_trabajo"
+            )
+            
+            df_bol_trab_calc = edited_bol_trab.dropna(subset=["Detalle"]).copy() if not edited_bol_trab.empty else pd.DataFrame()
+            if not df_bol_trab_calc.empty:
+                df_bol_trab_calc["Cantidad"] = pd.to_numeric(df_bol_trab_calc["Cantidad"], errors="coerce").fillna(1.0)
+                df_bol_trab_calc["Precio Unitario"] = pd.to_numeric(df_bol_trab_calc["Precio Unitario"], errors="coerce").fillna(0.0)
+                df_bol_trab_calc["Subtotal"] = df_bol_trab_calc["Cantidad"] * df_bol_trab_calc["Precio Unitario"]
+                total_calculado_bol_trab = float(df_bol_trab_calc["Subtotal"].sum())
+            else:
+                total_calculado_bol_trab = 0.0
                 
-                eb_det = st.text_area("Detalle / Concepto", value=str(t_data_sel['tipo_trabajo']))
+            col_eb_m1, col_eb_m2, col_eb_m3 = st.columns(3)
+            with col_eb_m1:
+                st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:#60a5fa;'>Total Calculado:<br/><span style='font-size:18px;'>{moneda}{total_calculado_bol_trab:,.2f}</span></div>", unsafe_allow_html=True)
+            with col_eb_m2:
+                eb_sen = st.number_input(f"Abonado / Seña ({moneda}) *", min_value=0.0, value=float(t_data_sel.get('sena') or 0.0), step=100.0, key="eb_sen_val")
+            with col_eb_m3:
+                saldo_preview_bt = max(0.0, total_calculado_bol_trab - eb_sen)
+                color_s_bt = "#ef4444" if saldo_preview_bt > 0 else "#10b981"
+                st.markdown(f"<div style='background-color:#111422; border:1px solid #1e293b; padding:10px 14px; border-radius:8px; font-weight:bold; color:{color_s_bt};'>Saldo Pendiente:<br/><span style='font-size:18px;'>{moneda}{saldo_preview_bt:,.2f}</span></div>", unsafe_allow_html=True)
                 
-                col_em1, col_em2 = st.columns(2)
-                with col_em1:
-                    eb_tot = st.number_input(f"Total Trabajo ({moneda})", min_value=0.0, value=float(t_data_sel['precio_venta'] or 0.0), step=100.0)
-                with col_em2:
-                    eb_sen = st.number_input(f"Abonado / Seña ({moneda})", min_value=0.0, value=float(t_data_sel['sena'] or 0.0), step=100.0)
-                
-                btn_generar_bol_ok = st.form_submit_button("💾 Guardar y Emitir Boleta", use_container_width=True)
-                if btn_generar_bol_ok:
-                    if eb_cli.strip() and eb_tot > 0:
-                        saldo_fin = max(0.0, eb_tot - eb_sen)
-                        items_json_str = json.dumps([{"detalle": eb_det.strip(), "cantidad": 1.0, "precio_unitario": eb_tot}])
-                        
-                        if IS_POSTGRES:
-                            run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
-                                            {"f": str(eb_fec), "c": eb_cli.strip(), "t": eb_tel.strip(), "d": items_json_str, "m": eb_met, "tot": eb_tot, "s": eb_sen, "sal": saldo_fin})
-                        else:
-                            run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                            (str(eb_fec), eb_cli.strip(), eb_tel.strip(), items_json_str, eb_met, eb_tot, eb_sen, saldo_fin))
-                        st.success("¡Boleta emitida con éxito! Ya podés verla en la sección de Boletas.")
-                        st.rerun()
+            st.write("")
+            btn_generar_bol_ok = st.button("💾 Guardar y Emitir Boleta", type="primary", use_container_width=True)
+            if btn_generar_bol_ok:
+                if eb_cli.strip() and total_calculado_bol_trab > 0:
+                    lista_items_bt = []
+                    for _, r_it in df_bol_trab_calc.iterrows():
+                        lista_items_bt.append({
+                            "detalle": str(r_it["Detalle"]).strip(),
+                            "cantidad": float(r_it["Cantidad"]),
+                            "precio_unitario": float(r_it["Precio Unitario"])
+                        })
+                    detalle_json_bt = json.dumps(lista_items_bt)
+                    saldo_fin_bt = max(0.0, total_calculado_bol_trab - eb_sen)
+                    
+                    if IS_POSTGRES:
+                        run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (:f, :c, :t, :d, :m, :tot, :s, :sal)",
+                                        {"f": str(eb_fec), "c": eb_cli.strip(), "t": eb_tel.strip(), "d": detalle_json_bt, "m": eb_met, "tot": total_calculado_bol_trab, "s": eb_sen, "sal": saldo_fin_bt})
+                    else:
+                        run_execute_raw("INSERT INTO boletas (fecha, cliente, telefono, detalle, metodo_pago, total, sena, saldo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                        (str(eb_fec), eb_cli.strip(), eb_tel.strip(), detalle_json_bt, eb_met, total_calculado_bol_trab, eb_sen, saldo_fin_bt))
+                    st.success("¡Boleta emitida con éxito! Ya podés verla en la sección de Boletas.")
+                    st.rerun()
+                else:
+                    st.error("Completá el nombre del cliente y asegurate de ingresar al menos un ítem con precio.")
 
     # TABLA NATIVA DE STREAMLIT
     if not df_todos_trabajos.empty:
@@ -1462,343 +1501,3 @@ elif st.session_state.seccion_activa == "Clientes":
         if not df_hist_trab.empty:
             opciones_trabajos_cli = {
                 f"#{row['id']} - {row['tipo_trabajo']} ({moneda}{float(row['precio_venta'] or 0):,.0f})": row
-                for _, row in df_hist_trab.iterrows()
-            }
-            sel_trab_wsp = st.selectbox("Elegí el pedido a notificar:", list(opciones_trabajos_cli.keys()), key=f"sel_t_wsp_{cli_sel}")
-            trab_info = opciones_trabajos_cli[sel_trab_wsp]
-            
-            tel_actual_trab = str(trab_info.get('telefono') or tel_encontrado)
-            tel_wsp_input = st.text_input("Número de Teléfono / WhatsApp:", value=tel_actual_trab, placeholder="ej: 5491112345678", key=f"input_wsp_{trab_info['id']}")
-            
-            tel_numeros = "".join([c for c in tel_wsp_input if c.isdigit()])
-            nombre_trab = str(trab_info['tipo_trabajo'])
-            monto_tot = f"{float(trab_info['precio_venta'] or 0):,.2f}"
-            
-            try:
-                msg_personalizado = msg_wsp_template.format(
-                    cliente=cli_sel,
-                    trabajo=nombre_trab,
-                    total=monto_tot,
-                    alias=alias_banco
-                )
-            except Exception:
-                msg_personalizado = f"Hola, Tu pedido {nombre_trab} está listo! el total es ${monto_tot} Gracias!"
-                
-            url_wsp_cli = f"https://wa.me/{tel_numeros}?text={urllib.parse.quote(msg_personalizado)}" if tel_numeros else "#"
-            
-            if tel_numeros:
-                st.markdown(f"<a href='{url_wsp_cli}' target='_blank' style='text-decoration:none;'><div style='background-color:#25d366; color:white; text-align:center; padding:10px; border-radius:8px; font-weight:bold; font-size:14.5px;'>📲 Enviar Mensaje a {cli_sel} por WhatsApp</div></a>", unsafe_allow_html=True)
-            else:
-                st.info("Ingresá el número de WhatsApp arriba para habilitar el botón.")
-        else:
-            st.info("Este cliente no tiene trabajos cargados para notificar.")
-
-        st.subheader("📋 Pedidos del Cliente")
-        if not df_hist_trab.empty:
-            df_hist_trab['hora_limpia'] = df_hist_trab['hora_carga'].fillna('')
-            df_hist_trab['fecha_carga_mostrar'] = df_hist_trab.apply(
-                lambda r: f"{r['fecha_carga']} {r['hora_limpia']}".strip(), axis=1
-            )
-            st.dataframe(df_hist_trab.rename(columns={'tipo_trabajo': 'Trabajo', 'telefono': 'Teléfono', 'fecha_carga_mostrar': 'Fecha y Hora Carga', 'fecha_entrega': 'Fecha Entrega', 'estado': 'Estado', 'precio_venta': f'Venta ({moneda})', 'sena': f'Seña ({moneda})', 'saldo': f'Saldo ({moneda})'})[['Trabajo', 'Teléfono', 'Fecha y Hora Carga', 'Fecha Entrega', 'Estado', f'Venta ({moneda})', f'Seña ({moneda})', f'Saldo ({moneda})']], use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay trabajos registrados para este cliente.")
-            
-        st.subheader("🧾 Comprobantes de Pago y Saldos")
-        if not df_hist_bol.empty:
-            st.dataframe(df_hist_bol.rename(columns={'fecha': 'Fecha', 'detalle': 'Detalle', 'metodo_pago': 'Método', 'total': f'Total ({moneda})', 'sena': f'Abonado ({moneda})', 'saldo': f'Saldo ({moneda})'}), use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay boletas emitidas para este cliente.")
-    else:
-        st.info("Todavía no hay clientes con actividad registrada.")
-
-# ==========================================
-# VISTA 5: CATÁLOGO DE INSUMOS Y MÁRGENES
-# ==========================================
-elif st.session_state.seccion_activa == "Insumos":
-    with st.expander("➕ Cargar Nuevo Material / Insumo", expanded=False):
-        with st.form("form_nuevo_insumo", clear_on_submit=True):
-            col_in1, col_in2 = st.columns(2)
-            with col_in1:
-                in_nombre = st.text_input("Nombre del Insumo (ej: Lona Frontlight 13oz, Vinilo Mate) *")
-                in_unidad = st.selectbox("Unidad de Medida", ["m² (Metro Cuadrado)", "Metro Lineal", "Unidad", "Placa", "Rollo"])
-            with col_in2:
-                in_costo = st.number_input(f"Costo Base Unitario ({moneda}) *", min_value=0.0, step=100.0)
-                in_multi = st.number_input("Multiplicador de Ganancia Deseado (ej: 2.5 = 150% ganancia)", min_value=1.0, value=2.5, step=0.1)
-            
-            btn_save_ins = st.form_submit_button("Guardar Insumo", use_container_width=True)
-            if btn_save_ins:
-                if in_nombre.strip() and in_costo > 0:
-                    try:
-                        if IS_POSTGRES:
-                            run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (:n, :u, :c, :m)",
-                                            {"n": in_nombre.strip(), "u": in_unidad, "c": float(in_costo), "m": float(in_multi)})
-                        else:
-                            run_execute_raw("INSERT INTO insumos (nombre, unidad, costo_unitario, multiplicador_sugerido) VALUES (?, ?, ?, ?)",
-                                            (in_nombre.strip(), in_unidad, float(in_costo), float(in_multi)))
-                        st.success("¡Insumo guardado correctamente!")
-                        st.rerun()
-                    except Exception:
-                        st.error("Ese insumo ya está cargado.")
-
-    df_insumos = fetch_data_cached("SELECT id, nombre, unidad, costo_unitario, multiplicador_sugerido, (costo_unitario * multiplicador_sugerido) as precio_sugerido FROM insumos ORDER BY nombre ASC")
-    
-    if not df_insumos.empty:
-        st.markdown("### 🏷️ Lista de Precios y Costos de Insumos")
-        st.dataframe(df_insumos.rename(columns={
-            'nombre': 'Material / Insumo',
-            'unidad': 'Unidad',
-            'costo_unitario': f'Costo Base ({moneda})',
-            'multiplicador_sugerido': 'Multiplicador',
-            'precio_sugerido': f'Precio Venta Sugerido ({moneda})'
-        })[['Material / Insumo', 'Unidad', f'Costo Base ({moneda})', 'Multiplicador', f'Precio Venta Sugerido ({moneda})']], use_container_width=True, hide_index=True)
-        
-        with st.expander("🗑️ Eliminar Insumo"):
-            opc_in_del = {row['nombre']: row['id'] for _, row in df_insumos.iterrows()}
-            sel_in_del = st.selectbox("Seleccionar insumo a borrar:", list(opc_in_del.keys()))
-            if st.button("Eliminar Insumo"):
-                if IS_POSTGRES: run_execute_raw("DELETE FROM insumos WHERE id=:id", {"id": opc_in_del[sel_in_del]})
-                else: run_execute_raw("DELETE FROM insumos WHERE id=?", (opc_in_del[sel_in_del],))
-                st.rerun()
-    else:
-        st.info("Todavía no cargaste ningún insumo en el catálogo.")
-
-# ==========================================
-# VISTA 6: COMPRAS Y FACTURAS (MÚLTIPLES RENGLONES)
-# ==========================================
-elif st.session_state.seccion_activa == "Compras":
-    st.markdown("### 🛒 Registro de Compras y Facturas con Desglose")
-    
-    with st.expander("➕ Cargar Factura con Múltiples Productos", expanded=False):
-        col_fc1, col_fc2, col_fc3 = st.columns(3)
-        with col_fc1:
-            prov_input = st.text_input("Proveedor * (ej: VL Insumos)", key="c_prov_multi")
-        with col_fc2:
-            fact_input = st.text_input("N° Factura / Remito", key="c_fact_multi")
-        with col_fc3:
-            fecha_input = st.date_input("Fecha de Compra", value=date.today(), key="c_fecha_multi")
-        
-        st.markdown("**Renglones de la Compra / Factura:**")
-        st.caption("Podés agregar renglones haciendo clic en el `+` al final de la tabla.")
-        
-        if "df_items_compra" not in st.session_state:
-            st.session_state.df_items_compra = pd.DataFrame([
-                {"Detalle": "Vinilo Rojo", "Cantidad": 1.0, "Precio Unitario": 0.0},
-                {"Detalle": "Vinilo Verde", "Cantidad": 1.0, "Precio Unitario": 0.0},
-                {"Detalle": "Cinta Térmica", "Cantidad": 1.0, "Precio Unitario": 0.0}
-            ])
-            
-        edited_items = st.data_editor(
-            st.session_state.df_items_compra,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Detalle": st.column_config.TextColumn("Detalle / Producto *", required=True),
-                "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=0.01, default=1.0, step=1.0),
-                "Precio Unitario": st.column_config.NumberColumn(f"Precio Unit. ({moneda})", min_value=0.0, default=0.0, step=100.0)
-            },
-            key="editor_items_compras"
-        )
-        
-        df_calc = edited_items.dropna(subset=["Detalle"]).copy() if not edited_items.empty else pd.DataFrame()
-        if not df_calc.empty:
-            df_calc["Cantidad"] = pd.to_numeric(df_calc["Cantidad"], errors="coerce").fillna(1.0)
-            df_calc["Precio Unitario"] = pd.to_numeric(df_calc["Precio Unitario"], errors="coerce").fillna(0.0)
-            df_calc["Importe"] = df_calc["Cantidad"] * df_calc["Precio Unitario"]
-            total_factura_calc = df_calc["Importe"].sum()
-        else:
-            total_factura_calc = 0.0
-            
-        st.markdown(f"<div style='text-align: right; font-size: 16px; font-weight: bold; color: #60a5fa; margin-bottom: 10px;'>TOTAL CALCULADO DE LA FACTURA: {moneda}{total_factura_calc:,.2f}</div>", unsafe_allow_html=True)
-        
-        if st.button("💾 Guardar Factura Completa", type="primary", use_container_width=True):
-            if not prov_input.strip():
-                st.error("Por favor completá el nombre del Proveedor.")
-            elif df_calc.empty:
-                st.error("Ingresá al menos un producto en la tabla.")
-            else:
-                for _, row_item in df_calc.iterrows():
-                    det_txt = str(row_item["Detalle"]).strip()
-                    cant_val = float(row_item["Cantidad"])
-                    pu_val = float(row_item["Precio Unitario"])
-                    tot_renglon = cant_val * pu_val
-                    if det_txt:
-                        if IS_POSTGRES:
-                            run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (:f, :p, :fe, :pr, :ca, :pu, :c)",
-                                            {"f": fact_input.strip(), "p": prov_input.strip(), "fe": str(fecha_input), "pr": det_txt, "ca": cant_val, "pu": pu_val, "c": tot_renglon})
-                        else:
-                            run_execute_raw("INSERT INTO compras (factura, proveedor, fecha, producto, cantidad, precio_unitario, costo) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                            (fact_input.strip(), prov_input.strip(), str(fecha_input), det_txt, cant_val, pu_val, tot_renglon))
-                st.success("¡Factura e ítems guardados con éxito!")
-                st.session_state.df_items_compra = pd.DataFrame([{"Detalle": "", "Cantidad": 1.0, "Precio Unitario": 0.0}])
-                st.rerun()
-
-    df_compras_raw = fetch_data_cached("SELECT id, fecha, factura, proveedor, producto, cantidad, precio_unitario, costo FROM compras ORDER BY fecha DESC, id DESC")
-
-    with st.expander("🗑️ Borrar Renglón de Compra", expanded=False):
-        if not df_compras_raw.empty:
-            opciones_c_del = {
-                f"#{row['id']} - {row['proveedor']} | {row['producto']} (Cant: {row['cantidad']} | {moneda}{row['costo']:,.0f})": row['id']
-                for _, row in df_compras_raw.iterrows()
-            }
-            c_del_sel = st.selectbox("Seleccionar ítem a borrar:", list(opciones_c_del.keys()), key="del_c_sel")
-            c_del_id = opciones_c_del[c_del_sel]
-            if st.button(f"❌ Borrar Registro #{c_del_id}", type="primary", use_container_width=True):
-                if IS_POSTGRES: run_execute_raw("DELETE FROM compras WHERE id = :id", {"id": c_del_id})
-                else: run_execute_raw("DELETE FROM compras WHERE id = ?", (c_del_id,))
-                st.warning(f"Registro #{c_del_id} eliminado.")
-                st.rerun()
-
-    st.divider()
-    if not df_compras_raw.empty:
-        df_compras_mostrar = df_compras_raw.copy()
-        busqueda_prov = st.text_input("🔍 Buscar:", key="search_prov", placeholder="Proveedor, producto o factura...")
-        if busqueda_prov:
-            df_compras_mostrar = df_compras_mostrar[
-                df_compras_mostrar['proveedor'].str.contains(busqueda_prov, case=False, na=False) |
-                df_compras_mostrar['producto'].str.contains(busqueda_prov, case=False, na=False) |
-                df_compras_mostrar['factura'].fillna('').str.contains(busqueda_prov, case=False, na=False)
-            ]
-        
-        df_mostrar_compras = df_compras_mostrar.rename(columns={
-            'id': 'ID',
-            'fecha': 'Fecha',
-            'factura': 'N° Factura',
-            'proveedor': 'Proveedor',
-            'producto': 'Detalle / Producto',
-            'cantidad': 'Cant.',
-            'precio_unitario': f'P. Unit. ({moneda})',
-            'costo': f'Importe ({moneda})'
-        })
-        st.dataframe(df_mostrar_compras[['Fecha', 'N° Factura', 'Proveedor', 'Detalle / Producto', 'Cant.', f'P. Unit. ({moneda})', f'Importe ({moneda})']], use_container_width=True, hide_index=True)
-    else:
-        st.info("Todavía no hay compras cargadas.")
-
-# ==========================================
-# VISTA 7: BALANCE Y FINANZAS
-# ==========================================
-elif st.session_state.seccion_activa == "Balance":
-    df_ventas_total = fetch_data_cached("SELECT SUM(precio_venta) as total_ventas, SUM(costo_material) as total_costos_prod FROM trabajos")
-    df_gastos_compras = fetch_data_cached("SELECT SUM(costo) as total_compras FROM compras")
-    
-    total_ventas = float(df_ventas_total['total_ventas'].iloc[0] or 0.0)
-    total_costos_produccion = float(df_ventas_total['total_costos_prod'].iloc[0] or 0.0)
-    total_compras = float(df_gastos_compras['total_compras'].iloc[0] or 0.0)
-    
-    ganancia_neta_real = total_ventas - total_compras
-    margen_real = (ganancia_neta_real / total_ventas * 100) if total_ventas > 0 else 0.0
-
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric(f"Ingresos Totales (Ventas)", f"{moneda}{total_ventas:,.2f}")
-    kpi2.metric(f"Egresos Reales (Compras)", f"{moneda}{total_compras:,.2f}")
-    kpi3.metric(f"Ganancia Neta Real", f"{moneda}{ganancia_neta_real:,.2f}", delta=f"{moneda}{ganancia_neta_real:,.2f}")
-    kpi4.metric("Margen Neto", f"{margen_real:.1f}%")
-
-    st.divider()
-    
-    st.markdown("### 🔍 Desglose Financiero del Taller")
-    col_egr1, col_egr2, col_egr3 = st.columns(3)
-    col_egr1.metric("🛠️ Costos Teóricos de Producción (Trabajos)", f"{moneda}{total_costos_produccion:,.2f}", help="Suma de los costos estimados asignados a cada trabajo.")
-    col_egr2.metric("🧾 Gastos Reales en Proveedores (Compras)", f"{moneda}{total_compras:,.2f}", help="Facturas reales pagadas a proveedores de insumos.")
-    
-    df_pagos_metodo = fetch_data_cached("SELECT metodo_pago, SUM(sena) as total_cobrado FROM boletas GROUP BY metodo_pago")
-    efectivo_en_mano = 0.0
-    banco_mp = 0.0
-    if not df_pagos_metodo.empty:
-        for _, r in df_pagos_metodo.iterrows():
-            met = r['metodo_pago'] or 'Efectivo (Caja Taller)'
-            monto = float(r['total_cobrado'] or 0.0)
-            if "Efectivo" in str(met):
-                efectivo_en_mano += monto
-            else:
-                banco_mp += monto
-                
-    col_egr3.metric("💵 Ingresos en Efectivo (Cobrado)", f"{moneda}{efectivo_en_mano:,.2f}")
-
-    st.divider()
-    
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.markdown("**Comparativa: Ventas vs Compras y Ganancia**")
-        df_comp = pd.DataFrame({
-            "Concepto": ["Ingresos (Ventas)", "Compras Proveedores", "Ganancia Neta Real"],
-            f"Monto ({moneda})": [total_ventas, total_compras, ganancia_neta_real]
-        })
-        fig_bar = px.bar(
-            df_comp, x="Concepto", y=f"Monto ({moneda})", color="Concepto",
-            color_discrete_map={"Ingresos (Ventas)": "#3b82f6", "Compras Proveedores": "#ef4444", "Ganancia Neta Real": "#10b981"},
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    with col_g2:
-        st.markdown("**Distribución de Trabajos por Rubro**")
-        df_tipos = fetch_data_cached("SELECT tipo_trabajo AS Tipo, COUNT(*) as Cantidad FROM trabajos GROUP BY tipo_trabajo")
-        if not df_tipos.empty:
-            fig_pie = px.pie(df_tipos, values="Cantidad", names="Tipo", hole=0.4, template="plotly_dark")
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-# ==========================================
-# VISTA 8: AJUSTES Y CONFIGURACIÓN
-# ==========================================
-elif st.session_state.seccion_activa == "Ajustes":
-    col_cfg1, col_cfg2 = st.columns(2)
-    
-    with col_cfg1:
-        st.markdown("### 🏢 Datos de la Empresa y Banco")
-        with st.form("form_configuracion_ampliada"):
-            cfg_titulo = st.text_input("Nombre de la Empresa:", value=titulo_actual)
-            cfg_subtitulo = st.text_input("Subtítulo:", value=subtitulo_actual)
-            cfg_tel = st.text_input("Teléfono / WhatsApp de Contacto:", value=tel_empresa)
-            cfg_dir = st.text_input("Dirección:", value=dir_empresa)
-            cfg_moneda = st.text_input("Símbolo de Moneda (ej: $, USD):", value=moneda)
-            
-            st.markdown("---")
-            st.markdown("**💳 Datos de Cobro (Aparecen en Boletas)**")
-            cfg_alias = st.text_input("Alias Bancario / MP:", value=alias_banco)
-            cfg_cbu = st.text_input("CBU / CVU:", value=cbu_banco)
-            cfg_titular = st.text_input("Titular de la Cuenta:", value=titular_banco)
-            cfg_pie = st.text_area("Leyenda en Presupuestos:", value=pie_empresa)
-            
-            st.markdown("---")
-            st.markdown("### 📲 Mensaje Predeterminado de WhatsApp")
-            st.caption("Variables disponibles: `{cliente}`, `{trabajo}`, `{total}`, `{alias}`")
-            cfg_msg_wsp = st.text_area("Plantilla de Mensaje:", value=msg_wsp_template, height=85)
-            
-            guardar_cfg = st.form_submit_button("💾 Guardar Configuración", use_container_width=True)
-            if guardar_cfg:
-                configs_update = {
-                    "titulo_app": cfg_titulo.strip(),
-                    "subtitulo_app": cfg_subtitulo.strip(),
-                    "telefono_empresa": cfg_tel.strip(),
-                    "direccion_empresa": cfg_dir.strip(),
-                    "simbolo_moneda": cfg_moneda.strip() if cfg_moneda.strip() else "$",
-                    "alias_bancario": cfg_alias.strip(),
-                    "cbu_bancario": cfg_cbu.strip(),
-                    "titular_cuenta": cfg_titular.strip(),
-                    "mensaje_pie": cfg_pie.strip(),
-                    "mensaje_wsp_custom": cfg_msg_wsp.strip()
-                }
-                for k, v in configs_update.items():
-                    if IS_POSTGRES:
-                        run_execute_raw("INSERT INTO configuracion (clave, valor) VALUES (:c, :v) ON CONFLICT (clave) DO UPDATE SET valor = :v", {"c": k, "v": v})
-                    else:
-                        run_execute_raw("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES (?, ?)", (k, v))
-                st.success("¡Configuración actualizada!")
-                st.rerun()
-
-    with col_cfg2:
-        st.markdown("### 🏷️ Tipos de Trabajo Sugeridos")
-        with st.form("form_nuevo_tipo_trabajo", clear_on_submit=True):
-            nuevo_tipo_txt = st.text_input("Agregar nuevo rubro sugerido (ej: Cartel Neón LED):")
-            btn_add_tipo = st.form_submit_button("➕ Agregar Rubro", use_container_width=True)
-            if btn_add_tipo:
-                if nuevo_tipo_txt.strip():
-                    try:
-                        if IS_POSTGRES:
-                            run_execute_raw("INSERT INTO tipos_trabajo (nombre) VALUES (:n)", {"n": nuevo_tipo_txt.strip()})
-                        else:
-                            run_execute_raw("INSERT INTO tipos_trabajo (nombre) VALUES (?)", (nuevo_tipo_txt.strip(),))
-                        st.success(f"Rubro '{nuevo_tipo_txt}' agregado.")
-                        st.rerun()
-                    except Exception:
-                        st.warning("Ese rubro ya existe.")
